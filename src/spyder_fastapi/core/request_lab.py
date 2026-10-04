@@ -134,6 +134,7 @@ def _body_fields(
     schema: dict[str, Any],
     *,
     source: SourceRef | None,
+    multipart: bool = False,
 ) -> list[RequestField]:
     """Generate editable form/multipart fields from an OpenAPI body schema."""
 
@@ -155,8 +156,19 @@ def _body_fields(
             or "string"
         )
         field_format = field_schema.get("format") or raw_field_schema.get("format")
+        media_type = (
+            field_schema.get("contentMediaType")
+            or raw_field_schema.get("contentMediaType")
+        )
         multiple = False
-        is_file = field_type == "string" and field_format == "binary"
+        is_file = (
+            multipart
+            and field_type == "string"
+            and (
+                field_format == "binary"
+                or bool(media_type)
+            )
+        )
 
         item_type: str | None = None
         if field_type == "array":
@@ -165,16 +177,19 @@ def _body_fields(
             if isinstance(items, dict):
                 item_schema = _resolve_schema(api_map, items)
                 item_type = str(item_schema.get("type") or "string")
+                item_media_type = item_schema.get("contentMediaType")
                 is_file = (
-                    item_schema.get("type") == "string"
-                    and item_schema.get("format") == "binary"
+                    multipart
+                    and item_schema.get("type") == "string"
+                    and (
+                        item_schema.get("format") == "binary"
+                        or bool(item_media_type)
+                    )
                 )
+                if is_file and not media_type:
+                    media_type = item_media_type
 
         example = None if is_file else _schema_example(api_map, raw_field_schema)
-        media_type = (
-            field_schema.get("contentMediaType")
-            or raw_field_schema.get("contentMediaType")
-        )
 
         fields.append(
             RequestField(
@@ -408,6 +423,9 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
                             api_map,
                             schema,
                             source=body_source or route.source,
+                            multipart=(
+                                body_content_type == "multipart/form-data"
+                            ),
                         )
 
     if body_example is None and body_model:
