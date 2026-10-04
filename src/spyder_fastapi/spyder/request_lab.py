@@ -554,6 +554,8 @@ class RequestLabWidget(QWidget):
             self._validation_summary.setText("No HTTP response received.")
             self._send.setEnabled(self._template is not None)
             self._pending_payload = None
+            self._active_command = None
+            self._active_route_id = None
             process.deleteLater()
             self._process = None
 
@@ -579,18 +581,31 @@ class RequestLabWidget(QWidget):
                 self.sig_status.emit("Request Lab runner returned invalid JSON.")
                 return
 
-            self._render_result(result)
+            self._render_result(result, route_id=self._active_route_id)
+            self._record_history(
+                result,
+                command=self._active_command,
+                route_id=self._active_route_id,
+            )
             if stderr:
                 self.sig_status.emit(
                     "Request completed with diagnostics; see Response."
                 )
         finally:
             self._pending_payload = None
+            self._active_command = None
+            self._active_route_id = None
             if process is not None:
                 process.deleteLater()
             self._process = None
+            self._update_replay_enabled()
 
-    def _render_result(self, result: RequestExecution) -> None:
+    def _render_result(
+        self,
+        result: RequestExecution,
+        *,
+        route_id: str | None = None,
+    ) -> None:
         if result.error:
             self._response_summary.setText(f"Request failed: {result.error}")
             self._response.setPlainText(
@@ -630,14 +645,18 @@ class RequestLabWidget(QWidget):
             f"Body\n{body_text}"
         )
 
+        validation_route_id = route_id
+        if validation_route_id is None and self._template is not None:
+            validation_route_id = self._template.route_id
+
         if (
             result.status_code == 422
             and self._api_map is not None
-            and self._template is not None
+            and validation_route_id is not None
         ):
             issues = validation_issues(
                 self._api_map,
-                self._template.route_id,
+                validation_route_id,
                 result.json_body,
             )
             self._render_validation_issues(issues)
