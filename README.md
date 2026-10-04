@@ -174,10 +174,13 @@ Implemented foundation:
 - exact request replay
 - handler breakpoint handoff to Spyder's existing debugger
 - loopback debug-server launch through Spyder's native `debugfile` workflow
+- non-blocking loopback readiness probe
+- automatic replay as soon as the debug server starts listening
+- explicit cancellation of a pending debug replay
+- targeted Stop debug server action that interrupts only the Spyder shell used for that launch
 
 Next:
 
-- server readiness detection + coordinated replay/stop
 - exception -> source navigation
 - Variable Explorer integration
 
