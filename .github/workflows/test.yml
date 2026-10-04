@@ -81,5 +81,15 @@ jobs:
       - name: Smoke test Spyder widget
         env:
           QT_QPA_PLATFORM: offscreen
+          FASTAPI_STUDIO_SCREENSHOT_DIR: qualification-artifacts
         run: python tests/smoke_spyder_widget.py
+
+      - name: Upload Windows UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fastapi-studio-windows-ui
+          path: qualification-artifacts/*.png
+          if-no-files-found: warn
+          retention-days: 14
 
