@@ -13,7 +13,6 @@ from qtpy.QtWidgets import (
     QGraphicsPolygonItem,
     QGraphicsRectItem,
     QGraphicsScene,
-    QGraphicsSimpleTextItem,
     QGraphicsTextItem,
     QGraphicsView,
     QHBoxLayout,
