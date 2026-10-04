@@ -173,7 +173,16 @@ spec.loader.exec_module(demo_module)
 
 demo_map = inspect_app(demo_module.app)
 widget.set_working_directory(demo_path.parent)
+widget._loaded_workdir = str(demo_path.parent)
 widget.set_api_map(demo_map)
+assert Path(widget._request_lab._workdir).resolve() == demo_path.parent
+
+# Opening source/debugger surfaces may change Spyder's live working directory.
+# The runtime target must keep using the exact directory that imported app:app.
+widget.set_working_directory(demo_path.parent.parent)
+assert Path(widget._request_lab._workdir).resolve() == demo_path.parent
+widget.set_working_directory(demo_path.parent)
+
 assert len(demo_map.routes) == 6
 assert len(demo_map.dependencies) >= 2
 assert len(widget._test_index.references) >= 5
