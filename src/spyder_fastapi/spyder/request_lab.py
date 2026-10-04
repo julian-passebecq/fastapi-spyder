@@ -108,6 +108,7 @@ class RequestLabWidget(QWidget):
             ["Location", "Name", "Type", "Required", "Value"]
         )
         self._parameters.verticalHeader().setVisible(False)
+        self._parameters.cellDoubleClicked.connect(self._open_parameter_source)
         self._parameters.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeToContents
         )
@@ -302,6 +303,15 @@ class RequestLabWidget(QWidget):
             )
         )
 
+    def _open_parameter_source(self, row: int, _column: int) -> None:
+        item = self._parameters.item(row, 0)
+        if item is None:
+            return
+        filename = item.data(_ROLE_SOURCE_FILE)
+        line = item.data(_ROLE_SOURCE_LINE)
+        if filename:
+            self.sig_open_source.emit(str(filename), int(line or 1))
+
     def _open_current_body_source(self) -> None:
         if self._body_source is None or not self._body_source.file:
             return
@@ -406,6 +416,7 @@ class RequestLabWidget(QWidget):
         process.readyReadStandardOutput.connect(self._read_stdout)
         process.readyReadStandardError.connect(self._read_stderr)
         process.started.connect(self._write_payload)
+        process.errorOccurred.connect(self._request_process_error)
         process.finished.connect(self._request_finished)
         self._process = process
 
@@ -447,6 +458,18 @@ class RequestLabWidget(QWidget):
                 "utf-8", errors="replace"
             )
         )
+
+    def _request_process_error(self, error) -> None:
+        if self._process is None:
+            return
+        if self._process.state() != QProcess.NotRunning:
+            return
+
+        message = self._process.errorString() or str(error)
+        self._response_summary.setText(f"Request runner failed to start: {message}")
+        self._validation_summary.setText("No HTTP response received.")
+        self._send.setEnabled(self._template is not None)
+        self.sig_status.emit(f"Request Lab process error: {message}")
 
     def _request_finished(self, _exit_code: int, _exit_status) -> None:
         process = self._process
