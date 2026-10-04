@@ -108,10 +108,11 @@ class RequestLabWidget(QWidget):
         self._breakpoint.clicked.connect(self._set_handler_breakpoint)
         route_row.addWidget(self._breakpoint)
 
-        self._debug_server = QPushButton("Debug server")
+        self._debug_server = QPushButton("Debug selected route")
         self._debug_server.setEnabled(False)
         self._debug_server.setToolTip(
-            "Start this FastAPI target through Spyder's native debugfile workflow."
+            "Set the selected handler breakpoint when source is available, "
+            "then start this FastAPI target through Spyder's native debugfile workflow."
         )
         self._debug_server.clicked.connect(self._start_debug_server)
         route_row.addWidget(self._debug_server)
@@ -459,6 +460,17 @@ class RequestLabWidget(QWidget):
         except ValueError as exc:
             self.sig_status.emit(str(exc))
             return
+
+        if self._handler_source is not None and self._handler_source.file:
+            line = (
+                self._handler_source.execution_line
+                or self._handler_source.line
+            )
+            if line is not None:
+                self.sig_set_breakpoint.emit(
+                    self._handler_source.file,
+                    int(line),
+                )
 
         self.sig_start_debug_server.emit(
             self._app_target,
