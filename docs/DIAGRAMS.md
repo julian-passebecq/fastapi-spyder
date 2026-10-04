@@ -90,6 +90,23 @@ The distinction remains explicit:
 - tested_by edges = static project evidence;
 - future SQL/HTTP/storage timing edges = observed runtime evidence.
 
+## Observed Request Lab timing
+
+The first runtime overlay is already implemented at route level. Each completed
+Request Lab execution can update the corresponding route node with:
+
+- last end-to-end elapsed time;
+- running average;
+- min / max;
+- last HTTP status;
+- transport-error count.
+
+This metric is deliberately labeled **Request Lab client elapsed**. It includes
+local client/process/network overhead and must not be confused with server-only
+handler latency.
+
+The evidence is in-memory and can be cleared explicitly from the Diagram tab.
+
 ## Runtime evolution
 
 Future telemetry should enrich these same nodes instead of creating a separate
