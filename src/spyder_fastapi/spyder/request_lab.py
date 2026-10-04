@@ -460,15 +460,21 @@ class RequestLabWidget(QWidget):
         )
 
     def _request_process_error(self, error) -> None:
-        if self._process is None:
-            return
-        if self._process.state() != QProcess.NotRunning:
+        process = self._process
+        if process is None:
             return
 
-        message = self._process.errorString() or str(error)
-        self._response_summary.setText(f"Request runner failed to start: {message}")
-        self._validation_summary.setText("No HTTP response received.")
-        self._send.setEnabled(self._template is not None)
+        message = process.errorString() or str(error)
+        if error == QProcess.FailedToStart:
+            self._response_summary.setText(
+                f"Request runner failed to start: {message}"
+            )
+            self._validation_summary.setText("No HTTP response received.")
+            self._send.setEnabled(self._template is not None)
+            self._pending_payload = None
+            process.deleteLater()
+            self._process = None
+
         self.sig_status.emit(f"Request Lab process error: {message}")
 
     def _request_finished(self, _exit_code: int, _exit_status) -> None:
