@@ -7,7 +7,8 @@ import os
 import sys
 from pathlib import Path
 
-from qtpy.QtCore import QProcess, QProcessEnvironment, Qt, Signal
+from qtpy.QtCore import QProcess, QProcessEnvironment, QTimer, Qt, Signal
+from qtpy.QtNetwork import QAbstractSocket, QTcpSocket
 from qtpy.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -89,6 +90,17 @@ class RequestLabWidget(QWidget):
         self._active_command: dict | None = None
         self._active_route_id: str | None = None
         self._history: list[dict] = []
+        self._debug_probe_attempts = 0
+        self._debug_replay_command: dict | None = None
+        self._debug_replay_route_id: str | None = None
+
+        self._debug_probe = QTcpSocket(self)
+        self._debug_probe.connected.connect(self._debug_server_ready)
+        self._debug_probe.errorOccurred.connect(self._debug_probe_error)
+
+        self._debug_probe_timer = QTimer(self)
+        self._debug_probe_timer.setInterval(250)
+        self._debug_probe_timer.timeout.connect(self._probe_debug_server)
 
         self._build_ui()
 
@@ -119,6 +131,11 @@ class RequestLabWidget(QWidget):
         )
         self._debug_server.clicked.connect(self._start_debug_server)
         route_row.addWidget(self._debug_server)
+
+        self._cancel_debug_wait = QPushButton("Cancel debug replay")
+        self._cancel_debug_wait.setEnabled(False)
+        self._cancel_debug_wait.clicked.connect(self._cancel_debug_replay)
+        route_row.addWidget(self._cancel_debug_wait)
 
         self._send = QPushButton("Send")
         self._send.setEnabled(False)
@@ -300,6 +317,7 @@ class RequestLabWidget(QWidget):
         self._pending_payload = None
         self._active_command = None
         self._active_route_id = None
+        self._cancel_debug_replay()
 
     def set_api_map(self, api_map: FastAPIMap) -> None:
         self._api_map = api_map
@@ -600,6 +618,7 @@ class RequestLabWidget(QWidget):
 
         try:
             host, port = local_debug_server_address(self._base_url.text())
+            replay_command = self._collect_command()
         except ValueError as exc:
             self.sig_status.emit(str(exc))
             return
@@ -615,12 +634,90 @@ class RequestLabWidget(QWidget):
                     int(line),
                 )
 
+        self._cancel_debug_replay(silent=True)
+        self._debug_replay_command = replay_command
+        self._debug_replay_route_id = (
+            self._template.route_id if self._template is not None else None
+        )
+        self._debug_probe_attempts = 0
+        self._cancel_debug_wait.setEnabled(True)
+
         self.sig_start_debug_server.emit(
             self._app_target,
             self._workdir,
             host,
             port,
         )
+
+        self.sig_status.emit(
+            f"Debug launch sent. Waiting for http://{host}:{port} "
+            "before replaying the selected request..."
+        )
+        self._debug_probe.setProperty("host", host)
+        self._debug_probe.setProperty("port", int(port))
+        self._debug_probe_timer.start()
+        self._probe_debug_server()
+
+    def _probe_debug_server(self) -> None:
+        if self._debug_replay_command is None:
+            self._debug_probe_timer.stop()
+            return
+
+        if self._debug_probe.state() != QAbstractSocket.UnconnectedState:
+            self._debug_probe.abort()
+
+        self._debug_probe_attempts += 1
+        if self._debug_probe_attempts > 120:
+            self._cancel_debug_replay(silent=True)
+            self.sig_status.emit(
+                "Timed out waiting 30 seconds for the FastAPI debug server. "
+                "Continue the Spyder debugger if it is paused, then try again."
+            )
+            return
+
+        host = str(self._debug_probe.property("host") or "")
+        port = int(self._debug_probe.property("port") or 0)
+        if not host or not port:
+            self._cancel_debug_replay(silent=True)
+            self.sig_status.emit("Debug readiness probe has no valid host/port.")
+            return
+
+        self._debug_probe.connectToHost(host, port)
+
+    def _debug_probe_error(self, _error) -> None:
+        if self._debug_replay_command is None:
+            return
+        self._debug_probe.abort()
+
+    def _debug_server_ready(self) -> None:
+        if self._debug_replay_command is None:
+            self._debug_probe.abort()
+            return
+
+        command = json.loads(json.dumps(self._debug_replay_command))
+        route_id = self._debug_replay_route_id
+        self._debug_probe_timer.stop()
+        self._debug_probe.abort()
+        self._debug_replay_command = None
+        self._debug_replay_route_id = None
+        self._cancel_debug_wait.setEnabled(False)
+
+        self.sig_status.emit(
+            "FastAPI debug server is listening. Replaying the selected request."
+        )
+        self._start_request(command, route_id)
+
+    def _cancel_debug_replay(self, _checked=False, *, silent: bool = False) -> None:
+        was_waiting = self._debug_replay_command is not None
+        self._debug_probe_timer.stop()
+        self._debug_probe.abort()
+        self._debug_replay_command = None
+        self._debug_replay_route_id = None
+        self._debug_probe_attempts = 0
+        self._cancel_debug_wait.setEnabled(False)
+
+        if was_waiting and not silent:
+            self.sig_status.emit("Cancelled debug-server readiness wait and replay.")
 
     def _set_handler_breakpoint(self) -> None:
         source = self._handler_source
