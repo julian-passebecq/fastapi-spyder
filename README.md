@@ -100,7 +100,7 @@ The repository now contains the v0.1 foundation:
 - serializable `FastAPIMap` JSON bridge
 - diagnostics view for import/inspection output
 - headless CLI
-- CI across Python 3.11-3.13 plus Spyder plugin import validation
+- CI across Python 3.11-3.13 plus an offscreen Qt Spyder widget smoke test
 - tests and a small bookstore example
 
 Inspect the example without Spyder:
@@ -132,8 +132,17 @@ Remaining before calling V0.1 complete:
 
 ### V0.2 - Change safely
 
-- API snapshots and semantic diff
-- model/dependency blast radius
+Implemented:
+
+- in-memory API baseline snapshots
+- semantic route/model/dependency diff
+- affected-route blast radius for schema and dependency changes
+- conservative compatibility-risk candidates
+- Spyder Changes explorer with source navigation
+
+Next:
+
+- persistent snapshot export/import
 - 422 validation visualizer
 - request builder
 
