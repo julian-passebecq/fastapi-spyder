@@ -605,16 +605,24 @@ class FastAPIDiagramWidget(QWidget):
                     source_text += f":{node.source.line}"
 
             if node.evidence == "runtime":
-                tooltip = (
+                average = (
+                    f"{node.average_ms:.1f} ms"
+                    if node.average_ms is not None
+                    else "-"
+                )
+                p95 = (
+                    f"{node.p95_ms:.1f} ms"
+                    if node.p95_ms is not None
+                    else "-"
+                )
+                rect.setToolTip(
                     f"Observed runtime evidence: {node.kind}\n"
                     f"{node.label}\n"
                     f"observations: {node.observed_count}\n"
-                    f"average: "
-                    f"{node.average_ms:.1f} ms"
-                    if node.average_ms is not None
-                    else f"Observed runtime evidence: {node.kind}\n{node.label}"
+                    f"average: {average}\n"
+                    f"p95: {p95}\n"
+                    "No static source is inferred for this downstream node."
                 )
-                rect.setToolTip(tooltip)
             else:
                 rect.setToolTip(
                     f"{node.kind}: {node.label}\n{source_text}\n"
