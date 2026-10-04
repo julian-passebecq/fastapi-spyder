@@ -20,7 +20,11 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from spyder_fastapi.core.telemetry import NativeTelemetryStore
+from spyder_fastapi.core.telemetry import (
+    NativeTelemetryStore,
+    span_category,
+    span_target,
+)
 from spyder_fastapi.models import NativeTelemetrySpan
 
 
@@ -262,9 +266,13 @@ class TraceWaterfall(QWidget):
             center_y = y + self._ROW_HEIGHT / 2
 
             function = span.attributes.get("code.function.name")
+            target = span_target(span)
+            category = span_category(span)
             label = span.name
             if function and span.name.startswith("fastapi."):
                 label += f" · {str(function).rsplit('.', 1)[-1]}"
+            elif target and category not in {"fastapi", "http-server"}:
+                label += f" · {target}"
             label = ("  " * min(depth, 5)) + label
 
             painter.setPen(palette.text().color())
@@ -354,6 +362,7 @@ class FastAPITelemetryWidget(QWidget):
         self._error_rate = _KpiBox("Error rate")
         self._validation = _KpiBox("Validation")
         self._exceptions = _KpiBox("Exceptions")
+        self._external = _KpiBox("External spans")
         self._average = _KpiBox("Average")
         self._p50 = _KpiBox("P50")
         self._p95 = _KpiBox("P95")
@@ -363,6 +372,7 @@ class FastAPITelemetryWidget(QWidget):
             self._error_rate,
             self._validation,
             self._exceptions,
+            self._external,
             self._average,
             self._p50,
             self._p95,
@@ -391,7 +401,14 @@ class FastAPITelemetryWidget(QWidget):
 
         self._traces = QTreeWidget()
         self._traces.setHeaderLabels(
-            ["Trace / span", "Kind", "Duration", "Status", "Function"]
+            [
+                "Trace / span",
+                "Category",
+                "Kind",
+                "Duration",
+                "Status",
+                "Function / target",
+            ]
         )
         self._traces.setRootIsDecorated(True)
         self._traces.currentItemChanged.connect(self._trace_selected)
@@ -450,6 +467,7 @@ class FastAPITelemetryWidget(QWidget):
         )
         self._validation.set_value(str(store.validation_failure_count()))
         self._exceptions.set_value(str(store.exception_count()))
+        self._external.set_value(str(store.external_span_count()))
         self._average.set_value(_ms(store.average_latency_ms()))
         self._p50.set_value(_ms(store.latency_percentile(0.50)))
         self._p95.set_value(_ms(store.latency_percentile(0.95)))
@@ -544,6 +562,7 @@ class FastAPITelemetryWidget(QWidget):
             root_item = QTreeWidgetItem(
                 [
                     route_id,
+                    span_category(root),
                     root.kind,
                     _ms(root.duration_ms),
                     str(status_code or root.status or "-"),
@@ -565,18 +584,25 @@ class FastAPITelemetryWidget(QWidget):
                     key=lambda span: (span.start_ns, span.end_ns),
                 )
                 for span in children:
+                    function_name = self._span_function(span)
+                    target = span_target(span)
+                    function_or_target = (
+                        function_name
+                        if function_name != "-"
+                        else (target or "-")
+                    )
                     child = QTreeWidgetItem(
                         [
                             span.name,
+                            span_category(span),
                             span.kind,
                             _ms(span.duration_ms),
                             span.status or "-",
-                            self._span_function(span),
+                            function_or_target,
                         ]
                     )
                     child.setData(0, _ROLE_TRACE_ID, trace_id)
                     child.setData(0, _ROLE_ROUTE_ID, route_id)
-                    function_name = self._span_function(span)
                     if function_name != "-":
                         child.setData(0, _ROLE_FUNCTION, function_name)
                     parent_item.addChild(child)
