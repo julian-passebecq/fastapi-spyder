@@ -29,6 +29,7 @@ from spyder_fastapi.core import (
     global_projection,
     impact_projection,
     impacted_routes,
+    overlay_runtime_lineage,
     route_projection,
 )
 from spyder_fastapi.core.telemetry import NativeTelemetryStore
@@ -129,6 +130,14 @@ class FastAPIDiagramWidget(QWidget):
         )
         self._show_native.toggled.connect(self._render_current)
 
+        self._show_downstream = QCheckBox("Observed I/O")
+        self._show_downstream.setChecked(True)
+        self._show_downstream.setToolTip(
+            "Overlay downstream DB/HTTP/messaging/RPC spans actually observed "
+            "in native OpenTelemetry traces."
+        )
+        self._show_downstream.toggled.connect(self._render_current)
+
         self._show_runtime = QCheckBox("Client")
         self._show_runtime.setChecked(True)
         self._show_runtime.setToolTip(
@@ -158,6 +167,7 @@ class FastAPIDiagramWidget(QWidget):
         controls.addWidget(self._focus, 1)
         controls.addWidget(self._show_tests)
         controls.addWidget(self._show_native)
+        controls.addWidget(self._show_downstream)
         controls.addWidget(self._show_runtime)
         controls.addWidget(self._clear_runtime)
         controls.addWidget(self._fit)
@@ -230,6 +240,20 @@ class FastAPIDiagramWidget(QWidget):
         self._show_native.setToolTip(
             "Show FastAPI native OpenTelemetry server-span timing on routes "
             f"({store.total_requests()} request(s))."
+        )
+        categories = store.external_span_categories()
+        category_summary = ", ".join(
+            f"{name}={count}"
+            for name, count in categories.items()
+        )
+        self._show_downstream.setToolTip(
+            "Overlay downstream DB/HTTP/messaging/RPC spans actually observed "
+            "in native OpenTelemetry traces"
+            + (
+                f" ({store.external_span_count()} span(s): {category_summary})."
+                if categories
+                else " (no downstream spans observed yet)."
+            )
         )
         self._render_current()
 
@@ -322,31 +346,40 @@ class FastAPIDiagramWidget(QWidget):
 
         mode = self._mode.currentData()
         include_tests = self._show_tests.isChecked()
+
         if mode == "global":
-            return global_projection(
+            projection = global_projection(
                 self._api_map,
                 self._test_index,
                 include_tests=include_tests,
             )
+        else:
+            focus = self._focus.currentData()
+            if focus is None:
+                return None
 
-        focus = self._focus.currentData()
-        if focus is None:
-            return None
+            if mode == "impact":
+                projection = impact_projection(
+                    self._api_map,
+                    str(focus),
+                    self._test_index,
+                    include_tests=include_tests,
+                )
+            else:
+                projection = route_projection(
+                    self._api_map,
+                    str(focus),
+                    self._test_index,
+                    include_tests=include_tests,
+                )
 
-        if mode == "impact":
-            return impact_projection(
+        if self._show_downstream.isChecked():
+            projection = overlay_runtime_lineage(
                 self._api_map,
-                str(focus),
-                self._test_index,
-                include_tests=include_tests,
+                projection,
+                self._native_telemetry,
             )
-
-        return route_projection(
-            self._api_map,
-            str(focus),
-            self._test_index,
-            include_tests=include_tests,
-        )
+        return projection
 
     # --- Rendering
     # ------------------------------------------------------------------
@@ -378,14 +411,24 @@ class FastAPIDiagramWidget(QWidget):
             for stats in self._runtime_evidence.routes.values()
         )
         runtime_suffix = (
-            f" / {runtime_samples} observed request(s)"
+            f" / {runtime_samples} client request(s)"
             if self._show_runtime.isChecked() and runtime_samples
+            else ""
+        )
+        observed_nodes = sum(
+            node.evidence == "runtime"
+            for node in projection.nodes
+        )
+        downstream_suffix = (
+            f" / {observed_nodes} observed downstream node(s)"
+            if self._show_downstream.isChecked() and observed_nodes
             else ""
         )
         self._summary.setText(
             f"{projection.title} - {len(projection.nodes)} nodes / "
             f"{len(projection.edges)} relationships"
             f"{runtime_suffix}"
+            f"{downstream_suffix}"
         )
         self.fit_to_view()
 
@@ -453,6 +496,10 @@ class FastAPIDiagramWidget(QWidget):
 
     def _node_brush(self, node: DiagramNode) -> QBrush:
         palette = self.palette()
+        if node.evidence == "runtime":
+            brush = QBrush(palette.alternateBase())
+            brush.setStyle(Qt.Dense4Pattern)
+            return brush
         if node.kind == "route":
             color = QColor(palette.highlight().color())
             color.setAlpha(70)
@@ -473,6 +520,19 @@ class FastAPIDiagramWidget(QWidget):
         if node.kind in {"dependency", "handler", "test"}:
             display_label = node.label.rsplit(".", 1)[-1]
         text = f"{header}\n{display_label}"
+
+        if node.evidence == "runtime":
+            timing = (
+                f"p95 {node.p95_ms:.1f} ms"
+                if node.p95_ms is not None
+                else "timing -"
+            )
+            count = (
+                f"{node.observed_count} observation"
+                if node.observed_count == 1
+                else f"{node.observed_count} observations"
+            )
+            return f"{header}\n{display_label}\n{count} | {timing}"
 
         if node.kind in {"dependency", "model"} and node.impact_count:
             suffix = "route" if node.impact_count == 1 else "routes"
@@ -543,10 +603,23 @@ class FastAPIDiagramWidget(QWidget):
                 source_text = node.source.file
                 if node.source.line:
                     source_text += f":{node.source.line}"
-            rect.setToolTip(
-                f"{node.kind}: {node.label}\n{source_text}\n"
-                "Double-click to open source when available."
-            )
+
+            if node.evidence == "runtime":
+                tooltip = (
+                    f"Observed runtime evidence: {node.kind}\n"
+                    f"{node.label}\n"
+                    f"observations: {node.observed_count}\n"
+                    f"average: "
+                    f"{node.average_ms:.1f} ms"
+                    if node.average_ms is not None
+                    else f"Observed runtime evidence: {node.kind}\n{node.label}"
+                )
+                rect.setToolTip(tooltip)
+            else:
+                rect.setToolTip(
+                    f"{node.kind}: {node.label}\n{source_text}\n"
+                    "Double-click to open source when available."
+                )
             self._scene.addItem(rect)
             self._node_items[node.id] = rect
 
@@ -568,8 +641,15 @@ class FastAPIDiagramWidget(QWidget):
     ) -> None:
         palette = self.palette()
         pen = QPen(palette.mid().color(), 1.35)
+        runtime_pen = QPen(palette.text().color(), 1.55)
+        runtime_pen.setStyle(Qt.DashLine)
 
         for edge in projection.edges:
+            edge_pen = (
+                runtime_pen
+                if edge.relation.startswith("observed_")
+                else pen
+            )
             source = positions.get(edge.source)
             target = positions.get(edge.target)
             if source is None or target is None:
@@ -592,7 +672,7 @@ class FastAPIDiagramWidget(QWidget):
                 end,
             )
             path_item = QGraphicsPathItem(path)
-            path_item.setPen(pen)
+            path_item.setPen(edge_pen)
             path_item.setZValue(-2)
             path_item.setToolTip(edge.relation)
             self._scene.addItem(path_item)
@@ -606,14 +686,24 @@ class FastAPIDiagramWidget(QWidget):
                     ]
                 )
             )
-            arrow.setPen(pen)
-            arrow.setBrush(QBrush(palette.mid().color()))
+            arrow.setPen(edge_pen)
+            arrow.setBrush(
+                QBrush(
+                    palette.text().color()
+                    if edge.relation.startswith("observed_")
+                    else palette.mid().color()
+                )
+            )
             arrow.setZValue(-1)
             arrow.setToolTip(edge.relation)
             self._scene.addItem(arrow)
 
             if projection.mode != "global":
-                relation = QGraphicsSimpleTextItem(edge.relation)
+                relation_text = (
+                    edge.relation.replace("observed_", "observed ")
+                    .replace("_", " ")
+                )
+                relation = QGraphicsSimpleTextItem(relation_text)
                 relation.setBrush(QBrush(palette.text().color()))
                 relation.setPos(
                     (start.x() + end.x()) / 2 - 30,
@@ -672,8 +762,43 @@ class FastAPIDiagramWidget(QWidget):
             f"{node.kind.upper()}",
             node.label,
             "",
+            (
+                "Evidence: observed OpenTelemetry runtime"
+                if node.evidence == "runtime"
+                else (
+                    "Evidence: static project test"
+                    if node.evidence == "test"
+                    else "Evidence: deterministic FastAPI structure"
+                )
+            ),
             f"Source: {source}",
         ]
+        if node.evidence == "runtime":
+            lines.extend(
+                [
+                    "",
+                    f"Category: {node.kind}",
+                    f"Target: {node.target or node.label}",
+                    f"Observations: {node.observed_count}",
+                    (
+                        f"Last: {node.last_ms:.1f} ms"
+                        if node.last_ms is not None
+                        else "Last: -"
+                    ),
+                    (
+                        f"Average: {node.average_ms:.1f} ms"
+                        if node.average_ms is not None
+                        else "Average: -"
+                    ),
+                    (
+                        f"P95: {node.p95_ms:.1f} ms"
+                        if node.p95_ms is not None
+                        else "P95: -"
+                    ),
+                    "",
+                    "This node is runtime evidence, not inferred static lineage.",
+                ]
+            )
         if impacted:
             lines.extend(
                 [
