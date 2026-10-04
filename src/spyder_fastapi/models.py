@@ -21,6 +21,7 @@ class SourceRef(BaseModel):
 
     file: str | None = None
     line: int | None = None
+    execution_line: int | None = None
     qualname: str | None = None
 
 
