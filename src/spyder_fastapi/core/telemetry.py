@@ -44,6 +44,12 @@ def _route_id(span: NativeTelemetrySpan) -> str | None:
     return f"{method} {route}"
 
 
+def span_route_id(span: NativeTelemetrySpan) -> str | None:
+    """Return the FastAPI route identifier carried by an HTTP server span."""
+
+    return _route_id(span)
+
+
 def _status_code(span: NativeTelemetrySpan) -> int | None:
     value = span.attributes.get("http.response.status_code")
     if isinstance(value, bool):
@@ -410,5 +416,6 @@ __all__ = [
     "NativeTelemetryStore",
     "is_external_span",
     "span_category",
+    "span_route_id",
     "span_target",
 ]
