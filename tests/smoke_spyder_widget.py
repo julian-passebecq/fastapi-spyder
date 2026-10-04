@@ -211,6 +211,29 @@ assert categories == {
 assert widget._telemetry._external._value.text() == "3"
 assert widget._telemetry._validation._value.text() == "1"
 assert widget._telemetry._exceptions._value.text() == "1"
+
+exception_item = next(
+    (
+        widget._telemetry._logs.topLevelItem(index)
+        for index in range(widget._telemetry._logs.topLevelItemCount())
+        if widget._telemetry._logs.topLevelItem(index).text(1)
+        == "http.server.request.exception"
+    ),
+    None,
+)
+assert exception_item is not None
+assert str(exception_item.data(0, 42)).endswith("fail_route")
+opened_exception_sources = []
+widget.sig_open_source.connect(
+    lambda filename, line: opened_exception_sources.append((filename, line))
+)
+widget._telemetry._log_activated(exception_item, 0)
+assert widget._telemetry._tabs.currentIndex() == 1
+assert widget._telemetry._traces.currentItem() is not None
+assert opened_exception_sources
+assert Path(opened_exception_sources[-1][0]).resolve() == demo_path
+assert opened_exception_sources[-1][1] > 0
+
 assert any(
     span.name == "fastapi.background_task"
     for span in widget._native_telemetry.spans
