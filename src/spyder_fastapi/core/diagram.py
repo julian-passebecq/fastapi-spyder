@@ -20,6 +20,7 @@ from spyder_fastapi.models import (
     FastAPIMap,
     LineageEdge,
     LineageNode,
+    NativeTelemetrySpan,
     RouteTestIndex,
 )
 
@@ -403,7 +404,7 @@ def _runtime_anchor(
     route_id: str,
     projected_ids: set[str],
     span,
-    spans_by_id: dict[str, object],
+    spans_by_id: dict[str, NativeTelemetrySpan],
 ) -> str:
     """Anchor one observed downstream span to the closest static FastAPI node."""
 
@@ -474,7 +475,7 @@ def overlay_runtime_lineage(
     projected_ids = {node.id for node in result.nodes}
     runtime_groups: dict[
         tuple[str, str, str, str, str],
-        list[object],
+        list[NativeTelemetrySpan],
     ] = defaultdict(list)
 
     for trace_id in telemetry.trace_ids():
