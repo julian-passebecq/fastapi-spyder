@@ -155,7 +155,18 @@ def _body_fields(
             or "string"
         )
         field_format = field_schema.get("format") or raw_field_schema.get("format")
+        multiple = False
         is_file = field_type == "string" and field_format == "binary"
+
+        if field_type == "array":
+            items = field_schema.get("items") or raw_field_schema.get("items")
+            if isinstance(items, dict):
+                item_schema = _resolve_schema(api_map, items)
+                is_file = (
+                    item_schema.get("type") == "string"
+                    and item_schema.get("format") == "binary"
+                )
+                multiple = is_file
 
         example = None if is_file else _schema_example(api_map, raw_field_schema)
         media_type = (
@@ -168,12 +179,13 @@ def _body_fields(
                 name=str(name),
                 python_name=str(name),
                 location="body",
-                type_name="file" if is_file else field_type,
+                type_name=("file[]" if multiple else "file") if is_file else field_type,
                 required=name in required_names,
                 example=example,
                 description=raw_field_schema.get("description"),
                 source=source,
                 is_file=is_file,
+                multiple=multiple,
                 media_type=str(media_type) if media_type else None,
             )
         )
