@@ -4,6 +4,7 @@ from .diff import diff_maps
 from .discovery import discover_targets
 from .inspector import inspect_app
 from .lineage import impacted_routes
+from .request_lab import build_request_template, validation_issues
 from .snapshot import (
     dump_snapshot,
     load_snapshot,
@@ -12,6 +13,7 @@ from .snapshot import (
 )
 
 __all__ = [
+    "build_request_template",
     "diff_maps",
     "discover_targets",
     "dump_snapshot",
@@ -20,4 +22,5 @@ __all__ = [
     "load_snapshot",
     "load_snapshot_text",
     "save_snapshot",
+    "validation_issues",
 ]
