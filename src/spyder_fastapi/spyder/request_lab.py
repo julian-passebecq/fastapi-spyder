@@ -654,11 +654,14 @@ class RequestLabWidget(QWidget):
             and self._api_map is not None
             and validation_route_id is not None
         ):
-            issues = validation_issues(
-                self._api_map,
-                validation_route_id,
-                result.json_body,
-            )
+            try:
+                issues = validation_issues(
+                    self._api_map,
+                    validation_route_id,
+                    result.json_body,
+                )
+            except KeyError:
+                issues = []
             self._render_validation_issues(issues)
             self._result_tabs.setCurrentIndex(1)
         else:
