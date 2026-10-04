@@ -53,23 +53,39 @@ jobs:
           from spyder_fastapi.spyder.plugin import FastAPIStudioPlugin
           from spyder_fastapi.spyder.widget import FastAPIStudioWidget
 
-          app = FastAPI(title="Smoke API")
+          before = FastAPI(title="Smoke API")
 
           def auth(token: str = Header()):
               return token
 
-          @app.get("/health")
+          @before.get("/health")
           def health(_token: str = Depends(auth)):
               return {"ok": True}
 
+          after = FastAPI(title="Smoke API")
+
+          @after.get("/health")
+          def health_after(_token: str = Depends(auth)):
+              return {"ok": True}
+
+          @after.get("/ready")
+          def ready():
+              return {"ready": True}
+
           qt_app = QApplication.instance() or QApplication([])
           widget = FastAPIStudioWidget("fastapi_studio", None)
-          widget.set_api_map(inspect_app(app))
+          widget.set_api_map(inspect_app(before))
 
           assert FastAPIStudioPlugin.NAME == "fastapi_studio"
           assert widget._routes_tree.topLevelItemCount() == 1
           assert widget._dependencies_tree.topLevelItemCount() == 1
           assert widget._lineage_tree.topLevelItemCount() == 1
+
+          widget.set_baseline()
+          widget.set_api_map(inspect_app(after))
+          assert widget._changes_tree.topLevelItemCount() >= 1
+          assert widget._current_diff is not None
+          assert "GET /ready" in widget._current_diff.affected_routes
 
           widget.close()
           qt_app.processEvents()
