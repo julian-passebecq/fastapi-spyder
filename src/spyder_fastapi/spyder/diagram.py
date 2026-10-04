@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections import defaultdict, deque
 
 from qtpy.QtCore import QPointF, QRectF, Qt, Signal
-from qtpy.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
+from qtpy.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPolygonF
 from qtpy.QtWidgets import (
     QComboBox,
     QGraphicsPathItem,
+    QGraphicsPolygonItem,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
@@ -461,6 +462,21 @@ class FastAPIDiagramWidget(QWidget):
             path_item.setZValue(-2)
             path_item.setToolTip(edge.relation)
             self._scene.addItem(path_item)
+
+            arrow = QGraphicsPolygonItem(
+                QPolygonF(
+                    [
+                        end,
+                        QPointF(end.x() - 11, end.y() - 5),
+                        QPointF(end.x() - 11, end.y() + 5),
+                    ]
+                )
+            )
+            arrow.setPen(pen)
+            arrow.setBrush(QBrush(palette.mid().color()))
+            arrow.setZValue(-1)
+            arrow.setToolTip(edge.relation)
+            self._scene.addItem(arrow)
 
             if projection.mode != "global":
                 relation = QGraphicsSimpleTextItem(edge.relation)
