@@ -50,8 +50,11 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           python - <<'PY'
+          from inspect import signature
+
           from fastapi import Depends, FastAPI, Header
           from qtpy.QtWidgets import QApplication
+          from spyder.plugins.ipythonconsole.plugin import IPythonConsole
 
           from spyder_fastapi.core import inspect_app
           from spyder_fastapi.models import RequestExecution
@@ -82,11 +85,26 @@ jobs:
           widget.set_api_map(inspect_app(before))
 
           assert FastAPIStudioPlugin.NAME == "fastapi_studio"
+          assert "method" in signature(IPythonConsole.run_script).parameters
           assert widget._routes_tree.topLevelItemCount() == 1
           assert widget._dependencies_tree.topLevelItemCount() == 1
           assert widget._lineage_tree.topLevelItemCount() == 1
           assert widget._request_lab._route.currentText() == "GET /health"
           assert widget._request_lab._parameters.rowCount() == 1
+
+          debug_launches = []
+          widget._request_lab.sig_start_debug_server.connect(
+              lambda target, workdir, host, port: debug_launches.append(
+                  (target, workdir, host, port)
+              )
+          )
+          widget._request_lab.set_app_target("service.main:app")
+          widget._request_lab.set_debug_server_available(True)
+          assert widget._request_lab._debug_server.isEnabled()
+          widget._request_lab._debug_server.click()
+          assert debug_launches
+          assert debug_launches[0][0] == "service.main:app"
+          assert debug_launches[0][2:] == ("127.0.0.1", 8000)
 
           widget._request_lab._render_result(
               RequestExecution(
