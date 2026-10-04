@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
+from uuid import uuid4
 from collections import defaultdict
 from pathlib import Path
 
-from qtpy.QtCore import QProcess, QProcessEnvironment, Qt, Signal
+from qtpy.QtCore import QProcess, QProcessEnvironment, QTimer, Qt, Signal
 from qtpy.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -33,6 +35,7 @@ from spyder_fastapi.core import (
     discover_targets,
     impacted_routes,
     clear_runtime_evidence,
+    NativeTelemetryStore,
     load_snapshot,
     record_route_execution,
     save_snapshot,
@@ -48,6 +51,7 @@ from spyder_fastapi.models import (
 )
 from spyder_fastapi.spyder.diagram import FastAPIDiagramWidget
 from spyder_fastapi.spyder.request_lab import RequestLabWidget
+from spyder_fastapi.spyder.telemetry import FastAPITelemetryWidget
 
 
 _ROLE_ID = 32
@@ -86,11 +90,21 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._test_index = RouteTestIndex()
         self._runtime_evidence = RuntimeEvidence()
         self._runtime_target: str | None = None
+        self._native_telemetry = NativeTelemetryStore()
+        self._native_telemetry_path: Path | None = None
+        self._native_telemetry_offset = 0
+        self._native_telemetry_partial = b""
         self._workdir = os.getcwd()
         self._python_executable = sys.executable
         self._process: QProcess | None = None
         self._stdout_chunks: list[str] = []
         self._stderr_chunks: list[str] = []
+
+        self._native_telemetry_timer = QTimer(self)
+        self._native_telemetry_timer.setInterval(250)
+        self._native_telemetry_timer.timeout.connect(
+            self._poll_native_telemetry
+        )
 
         self._build_ui()
         self.set_working_directory(self._workdir)
@@ -272,6 +286,13 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._diagram.sig_clear_runtime.connect(self._clear_runtime_evidence)
         self._tabs.addTab(self._diagram, "Diagram")
 
+        self._telemetry = FastAPITelemetryWidget()
+        self._telemetry.sig_clear.connect(self.clear_native_telemetry)
+        self._telemetry.sig_route_selected.connect(
+            self._telemetry_route_selected
+        )
+        self._tabs.addTab(self._telemetry, "Telemetry")
+
         tests_page = QWidget()
         tests_layout = QVBoxLayout(tests_page)
 
@@ -394,6 +415,9 @@ class FastAPIStudioWidget(PluginMainWidget):
             self._process = None
 
         self._request_lab.shutdown()
+        self._native_telemetry_timer.stop()
+        self._poll_native_telemetry()
+        self._cleanup_native_telemetry_file()
 
     # --- Project/app discovery
     # ------------------------------------------------------------------
@@ -1142,6 +1166,99 @@ class FastAPIStudioWidget(PluginMainWidget):
                     for column in range(item.columnCount())
                 ).casefold()
                 item.setHidden(bool(needle) and needle not in haystack)
+
+    # --- FastAPI native OpenTelemetry capture
+    # ------------------------------------------------------------------
+    def prepare_native_telemetry_capture(self) -> str:
+        """Create a fresh local JSONL sink for the next debug server."""
+
+        self._native_telemetry_timer.stop()
+        self._cleanup_native_telemetry_file()
+
+        directory = Path(tempfile.gettempdir()) / "fastapi-spyder"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"telemetry-{uuid4().hex}.jsonl"
+        path.write_bytes(b"")
+
+        self._native_telemetry = NativeTelemetryStore()
+        self._native_telemetry_path = path
+        self._native_telemetry_offset = 0
+        self._native_telemetry_partial = b""
+        self._telemetry.set_store(self._native_telemetry)
+        self._native_telemetry_timer.start()
+        return str(path)
+
+    def clear_native_telemetry(self) -> None:
+        """Clear the dashboard while keeping the live capture attached."""
+
+        self._native_telemetry.clear()
+        path = self._native_telemetry_path
+        if path is not None and path.exists():
+            try:
+                self._native_telemetry_offset = path.stat().st_size
+            except OSError:
+                self._native_telemetry_offset = 0
+        else:
+            self._native_telemetry_offset = 0
+        self._native_telemetry_partial = b""
+        self._telemetry.set_store(self._native_telemetry)
+
+    def _cleanup_native_telemetry_file(self) -> None:
+        path = self._native_telemetry_path
+        self._native_telemetry_path = None
+        self._native_telemetry_offset = 0
+        self._native_telemetry_partial = b""
+        if path is None:
+            return
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _poll_native_telemetry(self) -> None:
+        path = self._native_telemetry_path
+        if path is None or not path.exists():
+            return
+
+        try:
+            with path.open("rb") as handle:
+                handle.seek(self._native_telemetry_offset)
+                chunk = handle.read()
+                self._native_telemetry_offset = handle.tell()
+        except OSError:
+            return
+
+        if not chunk:
+            return
+
+        payload = self._native_telemetry_partial + chunk
+        lines = payload.split(b"\n")
+        self._native_telemetry_partial = lines.pop()
+
+        changed = False
+        for raw_line in lines:
+            if not raw_line.strip():
+                continue
+            try:
+                event = json.loads(raw_line.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self._native_telemetry.invalid_lines += 1
+                changed = True
+                continue
+            if isinstance(event, dict):
+                changed = self._native_telemetry.ingest(event) or changed
+            else:
+                self._native_telemetry.invalid_lines += 1
+                changed = True
+
+        if changed:
+            self._telemetry.set_store(self._native_telemetry)
+
+    def _telemetry_route_selected(self, route_id: str) -> None:
+        self._diagram.select_route(route_id)
+        diagram_index = self._tabs.indexOf(self._diagram)
+        if diagram_index >= 0:
+            self._tabs.setCurrentIndex(diagram_index)
 
     # --- Runtime evidence
     # ------------------------------------------------------------------
