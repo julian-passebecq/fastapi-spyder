@@ -436,22 +436,56 @@ class FastAPITelemetryWidget(QWidget):
             ["Severity", "Event", "Route", "Message", "Trace"]
         )
 
-        tabs = QTabWidget()
-        tabs.addTab(self._routes, "Routes")
-        tabs.addTab(trace_page, "Traces / waterfall")
-        tabs.addTab(self._logs, "FastAPI logs")
+        self._tabs = QTabWidget()
+        self._tabs.addTab(self._routes, "Routes")
+        self._tabs.addTab(trace_page, "Traces / waterfall")
+        self._tabs.addTab(self._logs, "FastAPI logs")
 
         layout = QVBoxLayout(self)
         layout.addLayout(header)
         layout.addLayout(kpis)
         layout.addWidget(self._timeline)
-        layout.addWidget(tabs, 1)
+        layout.addWidget(self._tabs, 1)
 
         self.refresh()
 
     def set_store(self, store: NativeTelemetryStore) -> None:
         self._store = store
         self.refresh()
+
+    def select_route(self, route_id: str) -> bool:
+        """Focus the latest captured trace for one FastAPI route."""
+
+        route_item = None
+        for index in range(self._routes.topLevelItemCount()):
+            item = self._routes.topLevelItem(index)
+            if item.data(0, _ROLE_ROUTE_ID) == route_id:
+                route_item = item
+                break
+
+        if route_item is not None:
+            self._routes.setCurrentItem(route_item)
+            self._routes.scrollToItem(route_item)
+
+        trace_item = None
+        for index in range(self._traces.topLevelItemCount()):
+            item = self._traces.topLevelItem(index)
+            if item.data(0, _ROLE_ROUTE_ID) == route_id:
+                trace_item = item
+                break
+
+        if trace_item is not None:
+            self._traces.setCurrentItem(trace_item)
+            trace_item.setExpanded(True)
+            self._traces.scrollToItem(trace_item)
+            self._tabs.setCurrentIndex(1)
+            return True
+
+        if route_item is not None:
+            self._tabs.setCurrentIndex(0)
+            return True
+
+        return False
 
     def refresh(self) -> None:
         store = self._store
