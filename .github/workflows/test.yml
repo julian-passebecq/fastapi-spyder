@@ -1,0 +1,100 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+
+      - name: Compile
+        run: python -m compileall -q src tests
+
+      - name: Test
+        run: python -m pytest
+
+  spyder-plugin-import:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install with Spyder
+        run: python -m pip install -e ".[dev,spyder]"
+
+      - name: Test demo client
+        run: python -m pytest -q examples/data_platform_demo/tests
+
+      - name: Smoke test Spyder widget
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tests/smoke_spyder_widget.py
+
+  spyder-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install with Spyder
+        run: python -m pip install -e ".[dev,spyder]"
+
+      - name: Dependency health
+        run: python -m pip check
+
+      - name: Spyder version
+        run: python -c "from importlib.metadata import version; print(version('spyder'))"
+
+      - name: Compile
+        run: python -m compileall -q src tests examples/data_platform_demo
+
+      - name: Test demo client
+        run: python -m pytest -q examples/data_platform_demo/tests
+
+      - name: Smoke test Spyder widget
+        env:
+          QT_QPA_PLATFORM: offscreen
+          FASTAPI_STUDIO_SCREENSHOT_DIR: qualification-artifacts
+        run: python tests/smoke_spyder_widget.py
+
+      - name: Validate Windows qualification launcher
+        shell: powershell
+        run: .\scripts\qualify-windows.ps1 -UseCurrentPython -SkipInstall -NoLaunch
+
+      - name: Upload Windows UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fastapi-studio-windows-ui
+          path: qualification-artifacts/*.png
+          if-no-files-found: warn
+          retention-days: 14
+
