@@ -174,6 +174,8 @@ class RequestField(BaseModel):
     example: Any = None
     description: str | None = None
     source: SourceRef | None = None
+    is_file: bool = False
+    media_type: str | None = None
 
 
 class RequestTemplate(BaseModel):
@@ -188,6 +190,7 @@ class RequestTemplate(BaseModel):
     body_content_type: str | None = None
     body_model: str | None = None
     body_source: SourceRef | None = None
+    body_fields: list[RequestField] = Field(default_factory=list)
 
 
 class ValidationIssue(BaseModel):
