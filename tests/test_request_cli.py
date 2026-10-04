@@ -320,3 +320,28 @@ def test_request_runner_repeats_multipart_values_for_lists(tmp_path):
     assert "alpha" in raw
     assert "beta" in raw
 
+def test_request_runner_repeats_query_values_for_lists():
+    server, thread = _serve()
+    try:
+        host, port = server.server_address
+        result = execute_request(
+            {
+                "method": "POST",
+                "base_url": f"http://{host}:{port}",
+                "path": "/query-list",
+                "query": {
+                    "tag": ["alpha", "beta"],
+                },
+                "body": {"ok": True},
+            }
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+    assert result.error is None
+    assert result.json_body["query"] == {
+        "tag": ["alpha", "beta"],
+    }
+
