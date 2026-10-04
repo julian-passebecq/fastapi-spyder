@@ -167,12 +167,31 @@ attached instead of replacing a vendor/provider silently.
 Applications that explicitly supply their own provider through
 `FastAPI(telemetry={...})` can therefore remain authoritative.
 
-## Later extensions
+## Observed downstream spans
 
-The same viewer can accept additional OpenTelemetry spans from instrumented
-libraries, for example SQL clients or outbound HTTP clients. Those will be
-shown as observed runtime evidence rather than inferred architecture.
+The same capture now accepts additional OpenTelemetry spans from instrumented
+libraries and application tracers. Common semantic attributes are classified as:
+
+- `database`;
+- `http-client`;
+- `messaging`;
+- `rpc`;
+- generic `external`.
+
+Those spans remain observed runtime evidence. They can appear in the Telemetry
+tree/waterfall and, when their trace belongs to a route currently present in the
+architecture projection, as optional **Observed I/O** nodes in the Diagram.
+
+The Diagram uses FastAPI's native span parentage conservatively to anchor an
+external span to a handler or dependency when that relationship is supported by
+the trace. Otherwise it falls back to the route instead of inventing precision.
+
+## Later extensions
 
 Native FastAPI metrics such as `http.server.request.duration` and
 `http.server.active_requests` can be added later when their local collection
 lifecycle is isolated cleanly from Spyder's long-lived IPython kernel.
+
+A later hardening pass should also define a configurable allowlist/redaction
+policy for third-party span attributes before any telemetry persistence beyond
+the current ephemeral local debug-session bridge is considered.
