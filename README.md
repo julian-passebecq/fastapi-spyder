@@ -114,6 +114,8 @@ The repository now contains the v0.1 foundation:
 - graphical native trace waterfall with relative span timing
 - semantic classification of observed DB / outbound HTTP / messaging / RPC spans
 - external-span targets surfaced directly in trace trees and waterfalls
+- observed downstream runtime-lineage overlay on the same architecture Diagram
+- handler/dependency anchoring when native trace parentage resolves it safely
 - validation and exception KPIs kept separate from 5xx error rate
 - native latency timeline without Grafana, WebEngine or a separate frontend
 - Spyder-native handler breakpoint handoff using the first executable line
@@ -230,6 +232,43 @@ not written to the JSONL sink.
 If the selected project uses a FastAPI version without native telemetry, the
 Telemetry tab reports that capability gap while the architecture, Request Lab
 and client-side timing features continue to work.
+
+## Observed runtime lineage
+
+The architecture Diagram can optionally overlay downstream OpenTelemetry spans
+on top of the deterministic FastAPI graph.
+
+The evidence layers remain explicit:
+
+```text
+deterministic FastAPI structure
+  POST /v1/ingestions
+      -> Depends(get_tenant_context)
+      -> create_ingestion()
+
+observed OpenTelemetry runtime
+  create_ingestion()
+      -- observed database --> postgresql:demo_platform
+      -- observed http client --> schema-registry.demo.internal
+
+  POST /v1/ingestions
+      -- observed messaging --> ingestion.accepted
+```
+
+Runtime nodes are hatched and runtime edges are dashed in the Qt Diagram.
+They carry observation count and last/average/P95 timing, but no fake source
+location is invented.
+
+When trace parentage is strong enough, Studio anchors an observed downstream
+span to the nearest deterministic node:
+
+- child of `fastapi.endpoint` -> route handler;
+- child of `fastapi.dependencies` -> matching dependency when unambiguous;
+- background-task/serialization I/O -> route, because those phases are runtime
+  operations rather than deterministic nodes in the current `FastAPIMap`.
+
+The **Observed I/O** toggle removes this runtime layer without changing the
+static graph.
 
 ## Interactive architecture diagrams
 
