@@ -81,20 +81,25 @@ FastAPIMap              (Pydantic model)
 
 Keeping the core headless is intentional. Spyder is the human UI, not the data model.
 
+The Spyder pane also inspects applications in a **separate Python subprocess**. Static discovery never imports the project, and actual FastAPI imports do not run inside Spyder's GUI process. That gives the project a safer path toward debugging real applications with startup side effects.
+
 ## Current bootstrap
 
 The repository now contains the v0.1 foundation:
 
-- FastAPI route discovery
+- safe AST-based FastAPI app discovery (no project import)
+- subprocess-based application inspection
+- API route tree with route details
 - path/query/header/cookie/body parameter extraction
-- Pydantic/OpenAPI schema extraction
-- recursive `Depends()` discovery
-- Python source file + line mapping
-- normalized lineage graph
-- dependency blast-radius query
+- Pydantic/OpenAPI schema browser
+- recursive `Depends()` discovery, including dependency request parameters
+- Python source file + line mapping and double-click editor navigation
+- route-scoped lineage tree
+- dependency and schema blast-radius views
 - serializable `FastAPIMap` JSON bridge
+- diagnostics view for import/inspection output
 - headless CLI
-- initial Spyder dockable plugin entry point
+- CI across Python 3.11-3.13 plus Spyder plugin import validation
 - tests and a small bookstore example
 
 Inspect the example without Spyder:
@@ -108,14 +113,23 @@ PYTHONPATH=examples/bookstore fastapi-spyder app:app
 
 ### V0.1 - Understand
 
+Implemented in the bootstrap branch:
+
 - app discovery
 - API tree
 - route inspector
-- Pydantic model browser
-- dependency graph
+- Pydantic/OpenAPI model browser
+- dependency browser + blast radius
 - contract/dependency lineage
 - source navigation
-- JSON/OpenAPI view
+- normalized JSON view
+
+Remaining before calling V0.1 complete:
+
+- raw OpenAPI side-by-side view
+- richer model source mapping
+- route/model search and filters
+- polished empty/error/loading states
 
 ### V0.2 - Change safely
 
