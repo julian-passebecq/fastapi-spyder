@@ -33,7 +33,7 @@ dev = [
 fastapi-spyder = "spyder_fastapi.cli:main"
 
 [project.entry-points."spyder.plugins"]
-spyder_fastapi = "spyder_fastapi.spyder.plugin:FastAPIStudioPlugin"
+fastapi_studio = "spyder_fastapi.spyder.plugin:FastAPIStudioPlugin"
 
 [tool.setuptools.packages.find]
 where = ["src"]
