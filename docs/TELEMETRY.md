@@ -123,6 +123,23 @@ The dashboard deliberately keeps different FastAPI failure signals separate.
 This avoids labeling normal contract rejection (for example HTTP 422) as an
 internal server failure.
 
+
+## Exception source navigation
+
+Unhandled-exception logs stay privacy-preserving: Studio still does not persist
+the exception traceback or message. Instead, a trace-linked exception is
+correlated with the already captured FastAPI operation spans.
+
+The source resolver prefers the deepest failed operation carrying
+`code.function.name`, so a dependency failure resolves to that dependency and a
+handler failure resolves to the endpoint function. The FastAPI logs table shows
+that resolved source function explicitly. Double-clicking the exception log
+first focuses the exact trace/waterfall and then opens the matching function in
+Spyder when the inspected static map can resolve it unambiguously.
+
+This is correlation from observed trace structure, not reconstructed traceback
+data.
+
 ## Trace waterfall
 
 The trace view has two synchronized representations:
