@@ -83,6 +83,8 @@ def test_inspection_extracts_contract_source_and_lineage():
     item_in = next(model for model in result.models if model.name == "ItemIn")
     assert item_in.source is not None
     assert item_in.source.line is not None
+    assert item_in.field_sources["name"].line is not None
+    assert item_in.field_sources["name"].qualname.endswith(".ItemIn.name")
     assert "/items/{item_id}" in result.openapi["paths"]
 
 
