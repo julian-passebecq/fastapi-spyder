@@ -7,6 +7,7 @@ from spyder_fastapi.core import (
     inspect_app,
     route_projection,
 )
+from spyder_fastapi.models import RouteTestIndex, SourceRef, TestReference
 
 
 class ItemIn(BaseModel):
@@ -99,3 +100,92 @@ def test_impact_projection_shows_real_paths_from_every_impacted_route():
         edge.relation == "depends_on"
         for edge in projection.edges
     )
+
+def _test_index() -> RouteTestIndex:
+    return RouteTestIndex(
+        scanned_files=1,
+        references=[
+            TestReference(
+                id="test:/tmp/test_items.py:10:POST:POST /items",
+                route_id="POST /items",
+                test_name="test_create_item",
+                method="POST",
+                requested_path="/items",
+                match_kind="exact",
+                source=SourceRef(
+                    file="/tmp/test_items.py",
+                    line=10,
+                    qualname="test_create_item",
+                ),
+            ),
+            TestReference(
+                id="test:/tmp/test_items.py:20:GET:GET /items",
+                route_id="GET /items",
+                test_name="test_list_items",
+                method="GET",
+                requested_path="/items",
+                match_kind="exact",
+                source=SourceRef(
+                    file="/tmp/test_items.py",
+                    line=20,
+                    qualname="test_list_items",
+                ),
+            ),
+        ],
+    )
+
+
+def test_route_projection_can_overlay_tests():
+    api_map = inspect_app(build_app())
+
+    projection = route_projection(
+        api_map,
+        "POST /items",
+        _test_index(),
+        include_tests=True,
+    )
+
+    test_nodes = [node for node in projection.nodes if node.kind == "test"]
+    assert [node.label for node in test_nodes] == ["test_create_item"]
+    assert any(
+        edge.source == "route:POST /items"
+        and edge.target == test_nodes[0].id
+        and edge.relation == "tested_by"
+        for edge in projection.edges
+    )
+
+
+def test_global_and_impact_projections_can_overlay_route_tests():
+    api_map = inspect_app(build_app())
+    index = _test_index()
+
+    global_map = global_projection(
+        api_map,
+        index,
+        include_tests=True,
+    )
+    assert {node.label for node in global_map.nodes if node.kind == "test"} == {
+        "test_create_item",
+        "test_list_items",
+    }
+
+    dependency = next(
+        item
+        for item in api_map.dependencies
+        if item.name.endswith(".shared_auth")
+    )
+    impact = impact_projection(
+        api_map,
+        dependency.id,
+        index,
+        include_tests=True,
+    )
+    assert {node.label for node in impact.nodes if node.kind == "test"} == {
+        "test_create_item",
+        "test_list_items",
+    }
+    assert sum(
+        edge.relation == "tested_by"
+        for edge in impact.edges
+    ) == 2
+
