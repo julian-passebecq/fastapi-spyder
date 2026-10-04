@@ -73,6 +73,21 @@ when available; otherwise a type-shaped placeholder is generated.
 Non-JSON required request bodies are detected and are not silently sent with
 the wrong media type.
 
+## Request history and exact replay
+
+Successful HTTP responses and transport failures are kept in an in-memory
+history for the current Spyder session. Each entry keeps the exact request
+command used by the isolated runner, so **Replay selected** sends the same
+method, URL inputs, query values, headers, cookies and JSON body again.
+
+History is intentionally not persisted yet. Authentication headers and cookie
+values are redacted in the history detail display, while the in-memory command
+retains them so exact replay remains exact.
+
+This provides the request-evidence layer needed for a later
+`Replay + breakpoint` workflow without prematurely coupling Request Lab to a
+server/debugger runtime.
+
 ## 422 visualizer
 
 A FastAPI validation response such as:
@@ -108,7 +123,7 @@ Not implemented yet:
 
 - multipart/file uploads;
 - form-urlencoded editors;
-- request history;
+- persisted request history;
 - persisted secrets or auth profiles;
 - automatic server startup;
 - replay under a Spyder breakpoint.
