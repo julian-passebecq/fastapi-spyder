@@ -188,11 +188,22 @@ def _model_field_sources(model: type[BaseModel]) -> dict[str, SourceRef]:
         for name in names:
             if name not in model_fields:
                 continue
-            result[name] = SourceRef(
+            source = SourceRef(
                 file=file_name,
                 line=start_line + int(getattr(node, "lineno", 1)) - 1,
                 qualname=f"{_callable_name(model)}.{name}",
             )
+            result[name] = source
+
+            field_info = model.model_fields.get(name)
+            if field_info is not None:
+                for alias in (
+                    getattr(field_info, "alias", None),
+                    getattr(field_info, "validation_alias", None),
+                    getattr(field_info, "serialization_alias", None),
+                ):
+                    if isinstance(alias, str) and alias:
+                        result.setdefault(alias, source)
 
     return result
 
