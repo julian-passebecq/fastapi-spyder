@@ -56,7 +56,7 @@ assert plugin_entries["spyder_fastapi"] == (
 )
 
 qt_app = QApplication.instance() or QApplication([])
-project_temp = TemporaryDirectory()
+project_temp = TemporaryDirectory(prefix="FastAPI Studio ")
 project_root = Path(project_temp.name)
 tests_dir = project_root / "tests"
 tests_dir.mkdir()
