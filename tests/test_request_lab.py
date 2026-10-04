@@ -91,7 +91,7 @@ def test_422_validation_issues_map_back_to_model_and_dependency_sources():
     assert body_issue.field_path == "count"
     assert body_issue.expected_type == "integer"
     assert body_issue.source is not None
-    assert body_issue.source.qualname.endswith(".Payload")
+    assert body_issue.source.qualname.endswith(".Payload.count")
 
     header_issue = issues[1]
     assert header_issue.location == "header"
