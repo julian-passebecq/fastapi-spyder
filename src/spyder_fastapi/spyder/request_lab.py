@@ -26,7 +26,11 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from spyder_fastapi.core import build_request_template, validation_issues
+from spyder_fastapi.core import (
+    build_request_template,
+    local_debug_server_address,
+    validation_issues,
+)
 from spyder_fastapi.models import (
     FastAPIMap,
     RequestExecution,
@@ -63,6 +67,7 @@ class RequestLabWidget(QWidget):
     sig_status = Signal(str)
     sig_open_source = Signal(str, int)
     sig_set_breakpoint = Signal(str, int)
+    sig_start_debug_server = Signal(str, str, str, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -72,6 +77,8 @@ class RequestLabWidget(QWidget):
         self._handler_source: SourceRef | None = None
         self._python_executable = sys.executable
         self._workdir = os.getcwd()
+        self._app_target: str | None = None
+        self._debug_server_available = False
         self._process: QProcess | None = None
         self._stdout_chunks: list[str] = []
         self._stderr_chunks: list[str] = []
@@ -100,6 +107,14 @@ class RequestLabWidget(QWidget):
         self._breakpoint.setEnabled(False)
         self._breakpoint.clicked.connect(self._set_handler_breakpoint)
         route_row.addWidget(self._breakpoint)
+
+        self._debug_server = QPushButton("Debug server")
+        self._debug_server.setEnabled(False)
+        self._debug_server.setToolTip(
+            "Start this FastAPI target through Spyder's native debugfile workflow."
+        )
+        self._debug_server.clicked.connect(self._start_debug_server)
+        route_row.addWidget(self._debug_server)
 
         self._send = QPushButton("Send")
         self._send.setEnabled(False)
@@ -268,6 +283,21 @@ class RequestLabWidget(QWidget):
 
         self._route_changed(self._route.currentText())
 
+    def set_app_target(self, target: str | None) -> None:
+        self._app_target = target.strip() if target else None
+        self._update_debug_server_enabled()
+
+    def set_debug_server_available(self, available: bool) -> None:
+        self._debug_server_available = bool(available)
+        self._update_debug_server_enabled()
+
+    def _update_debug_server_enabled(self) -> None:
+        self._debug_server.setEnabled(
+            self._debug_server_available
+            and bool(self._app_target)
+            and self._api_map is not None
+        )
+
     def set_python_executable(self, path: str) -> None:
         if path:
             self._python_executable = os.path.abspath(path)
@@ -410,6 +440,31 @@ class RequestLabWidget(QWidget):
                 indent=2,
                 ensure_ascii=False,
             )
+        )
+
+    def _start_debug_server(self) -> None:
+        if not self._debug_server_available:
+            self.sig_status.emit(
+                "Spyder IPython Console is not available for debug-server launch."
+            )
+            return
+        if not self._app_target:
+            self.sig_status.emit(
+                "Inspect a concrete module:attribute FastAPI target first."
+            )
+            return
+
+        try:
+            host, port = local_debug_server_address(self._base_url.text())
+        except ValueError as exc:
+            self.sig_status.emit(str(exc))
+            return
+
+        self.sig_start_debug_server.emit(
+            self._app_target,
+            self._workdir,
+            host,
+            port,
         )
 
     def _set_handler_breakpoint(self) -> None:
