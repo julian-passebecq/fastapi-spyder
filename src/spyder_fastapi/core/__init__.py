@@ -17,6 +17,7 @@ from .snapshot import (
     load_snapshot_text,
     save_snapshot,
 )
+from .telemetry import NativeTelemetryStore
 from .test_links import discover_route_tests, route_tests
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "inspect_app",
     "load_snapshot",
     "load_snapshot_text",
+    "NativeTelemetryStore",
     "local_debug_server_address",
     "record_route_execution",
     "route_projection",
