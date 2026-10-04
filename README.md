@@ -107,6 +107,7 @@ The repository now contains the v0.1 foundation:
 - 422 validation visualizer with source navigation
 - exact Pydantic field source mapping where inspectable
 - in-memory request history with redacted display and exact replay
+- observed Request Lab route timing/status overlay in the Diagram tab
 - Spyder-native handler breakpoint handoff using the first executable line
 - local uvicorn launch through Spyder's public debugfile/IPython Console API
 - headless CLI
@@ -250,6 +251,19 @@ Next:
 - Variable Explorer integration
 
 ### V0.4 - Observe locally
+
+Implemented first slice:
+
+- route-level runtime evidence from real Request Lab executions
+- last / average / min / max end-to-end client elapsed time
+- last HTTP status and transport-error counts
+- optional runtime overlay on the same architecture diagram
+- explicit Clear runtime lifecycle
+
+Important: this first timing is **Request Lab client elapsed**, not server-only or
+handler latency.
+
+Next:
 
 - request waterfall
 - per-dependency/handler latency
