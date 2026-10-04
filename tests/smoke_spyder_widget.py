@@ -256,8 +256,14 @@ widget._diagram._node_activated(database_node.id)
 assert widget._tabs.currentWidget() is widget._telemetry
 assert widget._telemetry._tabs.currentIndex() == 1
 assert widget._telemetry._traces.currentItem() is not None
+assert database_node.trace_id
 assert (
-    "Opened latest native telemetry for POST /v1/ingestions."
+    widget._telemetry._traces.currentItem().data(0, 41)
+    == database_node.trace_id
+)
+assert widget._telemetry._traces.currentItem().text(4) == "202"
+assert (
+    "Opened runtime evidence trace for POST /v1/ingestions."
     in widget._status.text()
 )
 capture_widget("telemetry")
