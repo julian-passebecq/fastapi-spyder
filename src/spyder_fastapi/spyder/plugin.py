@@ -11,6 +11,7 @@ from spyder.api.plugin_registration.decorators import (
 )
 from spyder.api.plugins import Plugins, SpyderDockablePlugin
 
+from spyder_fastapi.spyder.compat import spyder_contract_issues
 from spyder_fastapi.spyder.widget import FastAPIStudioWidget
 
 
@@ -246,7 +247,14 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
         )
 
     def check_compatibility(self):
-        return True, ""
+        issues = spyder_contract_issues()
+        if not issues:
+            return True, ""
+        return (
+            False,
+            "FastAPI Studio requires Spyder debug/editor APIs that are not "
+            "available in this Spyder build: " + "; ".join(issues),
+        )
 
     def on_close(self, cancelable=False):
         if self._debug_shellwidget is not None:
