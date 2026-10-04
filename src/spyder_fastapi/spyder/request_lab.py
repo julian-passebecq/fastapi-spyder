@@ -488,7 +488,16 @@ class RequestLabWidget(QWidget):
             return
 
         message = process.errorString() or str(error)
-        if error == QProcess.FailedToStart:
+        failed_to_start = getattr(QProcess, "FailedToStart", None)
+        if failed_to_start is None:
+            process_error = getattr(QProcess, "ProcessError", None)
+            failed_to_start = (
+                getattr(process_error, "FailedToStart", None)
+                if process_error is not None
+                else None
+            )
+
+        if failed_to_start is not None and error == failed_to_start:
             self._response_summary.setText(
                 f"Request runner failed to start: {message}"
             )
