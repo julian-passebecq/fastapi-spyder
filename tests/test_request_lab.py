@@ -275,3 +275,46 @@ def test_request_template_detects_multiple_upload_files():
     assert fields["documents"].multiple is True
     assert fields["documents"].type_name == "file[]"
 
+def test_form_and_file_422_issues_map_to_request_fields():
+    app = FastAPI(title="Upload Validation API")
+
+    @app.post("/upload-validation")
+    async def upload_validation(
+        description: str = Form(),
+        document: UploadFile = File(),
+    ):
+        return {
+            "description": description,
+            "filename": document.filename,
+        }
+
+    api_map = inspect_app(app)
+    issues = validation_issues(
+        api_map,
+        "POST /upload-validation",
+        {
+            "detail": [
+                {
+                    "type": "missing",
+                    "loc": ["body", "description"],
+                    "msg": "Field required",
+                    "input": None,
+                },
+                {
+                    "type": "missing",
+                    "loc": ["body", "document"],
+                    "msg": "Field required",
+                    "input": None,
+                },
+            ]
+        },
+    )
+
+    assert len(issues) == 2
+    assert issues[0].expected_type == "string"
+    assert issues[0].source is not None
+    assert issues[0].source.qualname.endswith(".upload_validation")
+    assert issues[1].expected_type == "file"
+    assert issues[1].source is not None
+    assert issues[1].source.qualname.endswith(".upload_validation")
+
