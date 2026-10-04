@@ -275,3 +275,23 @@ class DiagramProjection(BaseModel):
     edges: list[DiagramEdge] = Field(default_factory=list)
     focus_id: str | None = None
 
+
+class RouteRuntimeStats(BaseModel):
+    """Observed Request Lab timing/status evidence for one FastAPI route."""
+
+    route_id: str
+    request_count: int = 0
+    timed_count: int = 0
+    last_elapsed_ms: float | None = None
+    average_elapsed_ms: float | None = None
+    min_elapsed_ms: float | None = None
+    max_elapsed_ms: float | None = None
+    last_status_code: int | None = None
+    transport_error_count: int = 0
+
+
+class RuntimeEvidence(BaseModel):
+    """In-memory route runtime evidence collected by Request Lab."""
+
+    routes: dict[str, RouteRuntimeStats] = Field(default_factory=dict)
+
