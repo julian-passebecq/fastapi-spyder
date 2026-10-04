@@ -64,5 +64,5 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
     def check_compatibility(self):
         return True, ""
 
-    def on_close(self, cancellable=True):
+    def on_close(self, cancelable=False):
         return True
