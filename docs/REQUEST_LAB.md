@@ -94,18 +94,29 @@ the first executable statement in the handler. **Set handler breakpoint** asks
 Spyder's existing Debugger/Editor breakpoint manager to place a breakpoint at
 that executable line, while preserving a breakpoint that is already present.
 
-The workflow is deliberately explicit:
+The workflow is deliberately built on Spyder's own execution APIs:
 
 ```text
 select route
    -> Set handler breakpoint
-   -> run the FastAPI server under Spyder's debugger
+   -> Debug server
+        |
+        +-- Spyder IPython Console.run_script(..., method="debugfile")
+        +-- small uvicorn launcher
+        +-- reload=False / same debugged process
    -> Replay selected request
 ```
 
-FastAPI Studio does not yet claim this is a one-click debug orchestration flow.
-The current slice is a Spyder-native breakpoint handoff plus exact replay; the
-server/debug-session lifecycle remains owned by Spyder.
+The **Debug server** action only accepts loopback `http://` origins. It does
+not silently bind a development server to `0.0.0.0` or a remote hostname.
+The launcher deliberately does not make `uvicorn` a dependency of the Spyder
+plugin: `uvicorn` must exist in the selected project environment, where the
+FastAPI server dependency belongs.
+
+Spyder still owns the debug session, stepping, console and Variable Explorer.
+FastAPI Studio does not implement a second debugger runtime. If Spyder is
+configured to stop on the first line, continue once through the launcher; the
+route breakpoint then remains a normal Spyder breakpoint.
 
 ## 422 visualizer
 
@@ -144,8 +155,9 @@ Not implemented yet:
 - form-urlencoded editors;
 - persisted request history;
 - persisted secrets or auth profiles;
-- automatic server startup;
-- one-click server start + replay under a managed Spyder breakpoint.
+- automatic readiness detection / health probing for the debug server;
+- coordinated stop/restart of the debug server;
+- one-click start + readiness + replay sequencing.
 
 Those belong to later slices rather than being hidden behind best-effort
 behavior.
