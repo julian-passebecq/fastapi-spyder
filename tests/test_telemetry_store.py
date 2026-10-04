@@ -118,6 +118,66 @@ def test_native_telemetry_store_keeps_operation_spans_in_trace():
     assert store.trace_ids() == [trace_id]
 
 
+def test_preferred_source_function_uses_deepest_failed_fastapi_operation():
+    store = NativeTelemetryStore()
+    trace_id = "d" * 32
+
+    assert store.ingest(
+        _server_span(
+            trace_id=trace_id,
+            span_id="1" * 16,
+            route="/secure",
+            status_code=500,
+            status="ERROR",
+            end_ns=20_000_000,
+        )
+    )
+    assert store.ingest(
+        {
+            "signal": "span",
+            "trace_id": trace_id,
+            "span_id": "2" * 16,
+            "parent_span_id": "1" * 16,
+            "name": "fastapi.endpoint",
+            "kind": "INTERNAL",
+            "start_ns": 2_000_000,
+            "end_ns": 18_000_000,
+            "duration_ms": 16.0,
+            "status": "ERROR",
+            "attributes": {
+                "code.function.name": "service.secure_route",
+                "error.type": "RuntimeError",
+            },
+            "scope_name": "fastapi",
+        }
+    )
+    assert store.ingest(
+        {
+            "signal": "span",
+            "trace_id": trace_id,
+            "span_id": "3" * 16,
+            "parent_span_id": "2" * 16,
+            "name": "fastapi.dependencies",
+            "kind": "INTERNAL",
+            "start_ns": 3_000_000,
+            "end_ns": 5_000_000,
+            "duration_ms": 2.0,
+            "status": "ERROR",
+            "attributes": {
+                "code.function.name": "service.require_user",
+                "error.type": "PermissionError",
+            },
+            "scope_name": "fastapi",
+        }
+    )
+
+    assert (
+        store.preferred_source_function(trace_id)
+        == "service.require_user"
+    )
+    assert store.preferred_source_function("missing") is None
+
+
 def test_native_telemetry_store_accepts_fastapi_logs_and_controls():
     store = NativeTelemetryStore()
     trace_id = "f" * 32
