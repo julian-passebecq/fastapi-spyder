@@ -232,6 +232,42 @@ jobs:
           assert widget._telemetry._traces.columnCount() == 6
           assert widget._telemetry._waterfall._rows
 
+          widget._diagram.select_route("POST /v1/ingestions")
+          runtime_nodes = [
+              node
+              for node in widget._diagram._projection.nodes
+              if node.evidence == "runtime"
+          ]
+          assert {node.kind for node in runtime_nodes} == {
+              "database",
+              "http-client",
+              "messaging",
+          }
+          assert any(
+              edge.relation == "observed_database"
+              for edge in widget._diagram._projection.edges
+          )
+          assert any(
+              edge.relation == "observed_http_client"
+              for edge in widget._diagram._projection.edges
+          )
+          assert any(
+              edge.relation == "observed_messaging"
+              for edge in widget._diagram._projection.edges
+          )
+          assert "observed downstream node" in widget._diagram._summary.text()
+
+          widget._diagram._show_downstream.setChecked(False)
+          assert all(
+              node.evidence != "runtime"
+              for node in widget._diagram._projection.nodes
+          )
+          widget._diagram._show_downstream.setChecked(True)
+          assert any(
+              node.evidence == "runtime"
+              for node in widget._diagram._projection.nodes
+          )
+
           widget.set_working_directory(project_root)
           widget.set_api_map(inspect_app(before))
           widget._diagram.select_route("GET /health")
