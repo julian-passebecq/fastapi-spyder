@@ -35,6 +35,7 @@ from spyder_fastapi.core import (
     save_snapshot,
 )
 from spyder_fastapi.models import APIDiff, FastAPIMap, SourceRef
+from spyder_fastapi.spyder.diagram import FastAPIDiagramWidget
 from spyder_fastapi.spyder.request_lab import RequestLabWidget
 
 
@@ -251,6 +252,10 @@ class FastAPIStudioWidget(PluginMainWidget):
             ),
             "Dependencies",
         )
+
+        self._diagram = FastAPIDiagramWidget()
+        self._diagram.sig_open_source.connect(self.sig_open_source.emit)
+        self._tabs.addTab(self._diagram, "Diagram")
 
         lineage_page = QWidget()
         lineage_layout = QVBoxLayout(lineage_page)
@@ -513,6 +518,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._populate_models()
         self._populate_dependencies()
         self._populate_lineage_routes()
+        self._diagram.set_api_map(api_map)
         self._request_lab.set_api_map(api_map)
         self._request_lab.set_app_target(
             self._loaded_target
@@ -838,6 +844,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         )
 
         self._lineage_route.setCurrentText(route.id)
+        self._diagram.select_route(route.id)
         self._request_lab.select_route(route.id)
 
     def _populate_models(self) -> None:
@@ -880,6 +887,7 @@ class FastAPIStudioWidget(PluginMainWidget):
             f"Blast radius ({len(routes)} route(s))\n{route_text}\n\n"
             f"OpenAPI schema\n{schema}"
         )
+        self._diagram.focus_node(f"model:{model.name}")
 
     def _populate_dependencies(self) -> None:
         self._dependencies_tree.clear()
@@ -950,6 +958,7 @@ class FastAPIStudioWidget(PluginMainWidget):
             + ("\n".join(f"  {_short_name(child)}" for child in children) or "  -")
             + f"\n\nBlast radius ({len(routes)} route(s))\n{route_text}"
         )
+        self._diagram.focus_node(dependency.id)
 
     def _populate_lineage_routes(self) -> None:
         self._lineage_route.blockSignals(True)
