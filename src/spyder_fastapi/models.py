@@ -156,3 +156,56 @@ class SnapshotEnvelope(BaseModel):
     target: str | None = None
     api: FastAPIMap
 
+
+RequestLocation = Literal["path", "query", "header", "cookie", "body"]
+
+
+class RequestField(BaseModel):
+    """One editable input in the generated Request Lab form."""
+
+    name: str
+    location: RequestLocation
+    type_name: str
+    required: bool
+    example: Any = None
+    description: str | None = None
+    source: SourceRef | None = None
+
+
+class RequestTemplate(BaseModel):
+    """Generated request form for one FastAPI route."""
+
+    route_id: str
+    method: str
+    path: str
+    parameters: list[RequestField] = Field(default_factory=list)
+    body_example: Any = None
+    body_required: bool = False
+    body_model: str | None = None
+    body_source: SourceRef | None = None
+
+
+class ValidationIssue(BaseModel):
+    """Structured FastAPI/Pydantic validation issue from a 422 response."""
+
+    location: str
+    field_path: str
+    message: str
+    error_type: str
+    expected_type: str | None = None
+    input_value: Any = None
+    source: SourceRef | None = None
+
+
+class RequestExecution(BaseModel):
+    """Serializable result returned by the isolated request subprocess."""
+
+    url: str
+    status_code: int | None = None
+    reason: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    text: str = ""
+    json_body: Any = None
+    elapsed_ms: float | None = None
+    error: str | None = None
+
