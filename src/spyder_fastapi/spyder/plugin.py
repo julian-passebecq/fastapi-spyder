@@ -136,4 +136,5 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
         return True, ""
 
     def on_close(self, cancelable=False):
+        self.get_widget().shutdown()
         return True
