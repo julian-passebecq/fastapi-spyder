@@ -10,6 +10,7 @@ from .request_lab import (
     local_debug_server_address,
     validation_issues,
 )
+from .runtime import clear_runtime_evidence, record_route_execution
 from .snapshot import (
     dump_snapshot,
     load_snapshot,
@@ -20,6 +21,7 @@ from .test_links import discover_route_tests, route_tests
 
 __all__ = [
     "build_request_template",
+    "clear_runtime_evidence",
     "diff_maps",
     "discover_route_tests",
     "discover_targets",
@@ -31,6 +33,7 @@ __all__ = [
     "load_snapshot",
     "load_snapshot_text",
     "local_debug_server_address",
+    "record_route_execution",
     "route_projection",
     "save_snapshot",
     "route_tests",
