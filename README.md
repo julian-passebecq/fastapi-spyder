@@ -105,6 +105,7 @@ The repository now contains the v0.1 foundation:
 - exact Pydantic field source mapping where inspectable
 - in-memory request history with redacted display and exact replay
 - Spyder-native handler breakpoint handoff using the first executable line
+- local uvicorn launch through Spyder's public debugfile/IPython Console API
 - headless CLI
 - CI across Python 3.11-3.13 plus an offscreen Qt Spyder widget smoke test
 - tests and a small bookstore example
@@ -166,10 +167,11 @@ Implemented foundation:
 - in-memory request history
 - exact request replay
 - handler breakpoint handoff to Spyder's existing debugger
+- loopback debug-server launch through Spyder's native `debugfile` workflow
 
 Next:
 
-- one-click debug-session/server lifecycle + replay
+- server readiness detection + coordinated replay/stop
 - exception -> source navigation
 - Variable Explorer integration
 
