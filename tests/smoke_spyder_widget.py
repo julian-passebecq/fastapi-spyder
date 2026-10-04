@@ -1,0 +1,412 @@
+"""Cross-platform headless qualification for the Spyder FastAPI Studio widget."""
+
+import sys
+from importlib.metadata import entry_points
+from importlib.util import module_from_spec, spec_from_file_location
+from inspect import signature
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from fastapi import Depends, FastAPI, File, Form, Header, UploadFile
+from fastapi.testclient import TestClient
+from qtpy.QtWidgets import QApplication
+from spyder.plugins.ipythonconsole.plugin import IPythonConsole
+
+from spyder_fastapi.core import NativeTelemetryStore, inspect_app
+from spyder_fastapi.models import RequestExecution
+from spyder_fastapi.telemetry_capture import configure_native_telemetry
+from spyder_fastapi.spyder.plugin import FastAPIStudioPlugin
+from spyder_fastapi.spyder.widget import FastAPIStudioWidget
+
+before = FastAPI(title="Smoke API")
+
+def auth(token: str = Header()):
+    return token
+
+@before.get("/health")
+def health(_token: str = Depends(auth)):
+    return {"ok": True}
+
+@before.post("/upload")
+async def upload(
+    description: str = Form(),
+    document: UploadFile = File(),
+):
+    return {
+        "description": description,
+        "filename": document.filename,
+    }
+
+after = FastAPI(title="Smoke API")
+
+@after.get("/health")
+def health_after(_token: str = Depends(auth)):
+    return {"ok": True}
+
+@after.get("/ready")
+def ready():
+    return {"ready": True}
+
+plugin_entries = {
+    entry.name: entry.value
+    for entry in entry_points(group="spyder.plugins")
+}
+assert plugin_entries["spyder_fastapi"] == (
+    "spyder_fastapi.spyder.plugin:FastAPIStudioPlugin"
+)
+
+qt_app = QApplication.instance() or QApplication([])
+project_temp = TemporaryDirectory()
+project_root = Path(project_temp.name)
+tests_dir = project_root / "tests"
+tests_dir.mkdir()
+(tests_dir / "test_smoke_api.py").write_text(
+    "def test_health(client):\n"
+    "    response = client.get('/health')\n"
+    "    assert response.status_code == 200\n",
+    encoding="utf-8",
+)
+
+widget = FastAPIStudioWidget("fastapi_studio", None)
+widget.set_working_directory(project_root)
+widget.set_api_map(inspect_app(before))
+
+native_path = project_root / "native-telemetry.jsonl"
+capture = configure_native_telemetry(native_path)
+assert capture["event"] == "capture_configured"
+assert capture["tracing"] is True
+assert capture["logs"] is True
+
+native_client = TestClient(before)
+assert native_client.get(
+    "/health",
+    headers={"token": "native-smoke"},
+).status_code == 200
+assert native_client.get("/health").status_code == 422
+
+widget._native_telemetry_path = native_path
+widget._native_telemetry_offset = 0
+widget._native_telemetry_partial = b""
+widget._poll_native_telemetry()
+
+assert widget._native_telemetry.total_requests() == 2
+assert any(
+    span.name == "fastapi.dependencies"
+    for span in widget._native_telemetry.spans
+)
+assert any(
+    span.name == "fastapi.endpoint"
+    for span in widget._native_telemetry.spans
+)
+assert any(
+    span.name == "fastapi.serialization"
+    for span in widget._native_telemetry.spans
+)
+assert any(
+    log.event_name == "fastapi.validation.failed"
+    for log in widget._native_telemetry.logs
+)
+assert widget._telemetry._routes.topLevelItemCount() == 1
+assert "LIVE" in widget._telemetry._status.text()
+
+assert widget._telemetry._validation._value.text() == "1"
+assert widget._telemetry._exceptions._value.text() == "0"
+assert widget._telemetry._waterfall._rows
+native_summary = widget._diagram._native_route_summaries["GET /health"]
+assert native_summary.request_count == 2
+assert native_summary.validation_failure_count == 1
+
+demo_path = Path("examples/data_platform_demo/app.py").resolve()
+spec = spec_from_file_location("data_platform_demo_app", demo_path)
+assert spec is not None and spec.loader is not None
+demo_module = module_from_spec(spec)
+sys.modules[spec.name] = demo_module
+spec.loader.exec_module(demo_module)
+
+demo_map = inspect_app(demo_module.app)
+widget.set_working_directory(demo_path.parent)
+widget.set_api_map(demo_map)
+assert len(demo_map.routes) == 6
+assert len(demo_map.dependencies) >= 2
+assert len(widget._test_index.references) >= 5
+
+demo_native_path = project_root / "demo-native-telemetry.jsonl"
+demo_capture = configure_native_telemetry(demo_native_path)
+assert demo_capture["event"] == "capture_configured"
+
+demo_client = TestClient(
+    demo_module.app,
+    raise_server_exceptions=False,
+)
+demo_headers = {
+    "x-api-key": "demo-secret",
+    "x-tenant-id": "contoso",
+}
+assert demo_client.post(
+    "/v1/ingestions",
+    headers=demo_headers,
+    json={
+        "source": "crm",
+        "record_count": 25,
+        "schema_version": 1,
+    },
+).status_code == 202
+assert demo_client.post(
+    "/v1/ingestions",
+    headers=demo_headers,
+    json={
+        "source": "crm",
+        "record_count": 0,
+        "schema_version": 1,
+    },
+).status_code == 422
+assert demo_client.get("/v1/debug/fail").status_code == 500
+
+widget._native_telemetry = NativeTelemetryStore()
+widget._native_telemetry_path = demo_native_path
+widget._native_telemetry_offset = 0
+widget._native_telemetry_partial = b""
+widget._poll_native_telemetry()
+
+categories = widget._native_telemetry.external_span_categories()
+assert categories == {
+    "database": 1,
+    "http-client": 1,
+    "messaging": 1,
+}
+assert widget._telemetry._external._value.text() == "3"
+assert widget._telemetry._validation._value.text() == "1"
+assert widget._telemetry._exceptions._value.text() == "1"
+assert any(
+    span.name == "fastapi.background_task"
+    for span in widget._native_telemetry.spans
+)
+assert any(
+    span.name == "publish ingestion.accepted"
+    for span in widget._native_telemetry.spans
+)
+assert widget._telemetry._traces.columnCount() == 6
+assert widget._telemetry._waterfall._rows
+
+widget._diagram.select_route("POST /v1/ingestions")
+runtime_nodes = [
+    node
+    for node in widget._diagram._projection.nodes
+    if node.evidence == "runtime"
+]
+assert {node.kind for node in runtime_nodes} == {
+    "database",
+    "http-client",
+    "messaging",
+}
+assert any(
+    edge.relation == "observed_database"
+    for edge in widget._diagram._projection.edges
+)
+assert any(
+    edge.relation == "observed_http_client"
+    for edge in widget._diagram._projection.edges
+)
+assert any(
+    edge.relation == "observed_messaging"
+    for edge in widget._diagram._projection.edges
+)
+assert "observed downstream node" in widget._diagram._summary.text()
+
+database_node = next(
+    node
+    for node in runtime_nodes
+    if node.kind == "database"
+)
+widget._diagram._node_activated(database_node.id)
+assert widget._tabs.currentWidget() is widget._telemetry
+assert widget._telemetry._tabs.currentIndex() == 1
+assert widget._telemetry._traces.currentItem() is not None
+assert (
+    "Opened latest native telemetry for POST /v1/ingestions."
+    in widget._status.text()
+)
+
+widget._diagram._show_downstream.setChecked(False)
+assert all(
+    node.evidence != "runtime"
+    for node in widget._diagram._projection.nodes
+)
+widget._diagram._show_downstream.setChecked(True)
+assert any(
+    node.evidence == "runtime"
+    for node in widget._diagram._projection.nodes
+)
+
+widget.set_working_directory(project_root)
+widget.set_api_map(inspect_app(before))
+widget._diagram.select_route("GET /health")
+
+assert FastAPIStudioPlugin.NAME == "fastapi_studio"
+assert "method" in signature(IPythonConsole.run_script).parameters
+assert widget._routes_tree.topLevelItemCount() == 2
+assert widget._dependencies_tree.topLevelItemCount() == 1
+assert widget._lineage_tree.topLevelItemCount() == 1
+assert widget._request_lab._route.currentText() == "GET /health"
+assert widget._diagram._projection is not None
+assert widget._diagram._projection.mode == "route"
+assert widget._diagram._node_items
+
+assert len(widget._test_index.references) == 1
+assert widget._tests_tree.topLevelItemCount() == 1
+assert widget._test_index.references[0].route_id == "GET /health"
+
+widget._diagram.set_show_tests(True)
+assert any(
+    node.kind == "test"
+    for node in widget._diagram._projection.nodes
+)
+
+global_index = widget._diagram._mode.findData("global")
+widget._diagram._mode.setCurrentIndex(global_index)
+assert widget._diagram._projection.mode == "global"
+assert all(
+    node.kind != "parameter"
+    for node in widget._diagram._projection.nodes
+)
+
+dependency_id = widget._api_map.dependencies[0].id
+widget._diagram.focus_node(dependency_id)
+assert widget._diagram._projection.mode == "impact"
+assert widget._diagram._projection.focus_id == dependency_id
+assert "route:GET /health" in widget._diagram._projection.roots
+
+widget._diagram.select_route("GET /health")
+assert widget._diagram._projection.mode == "route"
+assert widget._request_lab._route.currentText() == "GET /health"
+assert widget._request_lab._parameters.rowCount() == 1
+
+widget._request_lab.select_route("POST /upload")
+assert widget._request_lab._body_fields.rowCount() == 2
+with TemporaryDirectory() as temp_dir:
+    upload_path = Path(temp_dir) / "smoke.txt"
+    upload_path.write_text("smoke upload", encoding="utf-8")
+
+    for row in range(widget._request_lab._body_fields.rowCount()):
+        kind = widget._request_lab._body_fields.item(row, 0).text()
+        name = widget._request_lab._body_fields.item(row, 1).text()
+        value = widget._request_lab._body_fields.item(row, 4)
+        if name == "description":
+            value.setText("smoke")
+        elif kind == "file" and name == "document":
+            value.setText(str(upload_path))
+
+    multipart_command = widget._request_lab._collect_command()
+    assert multipart_command["multipart"]["description"] == "smoke"
+    assert multipart_command["files"]["document"] == str(upload_path)
+
+widget._request_lab.select_route("GET /health")
+
+debug_launches = []
+widget._request_lab.sig_start_debug_server.connect(
+    lambda target, workdir, host, port: debug_launches.append(
+        (target, workdir, host, port)
+    )
+)
+widget._request_lab.set_app_target("service.main:app")
+widget._request_lab.set_debug_server_available(True)
+assert widget._request_lab._debug_server.isEnabled()
+widget._request_lab._parameters.item(0, 4).setText("smoke-token")
+widget._request_lab._debug_server.click()
+assert debug_launches
+assert widget._request_lab._cancel_debug_wait.isEnabled()
+assert debug_launches[0][0] == "service.main:app"
+assert debug_launches[0][2:] == ("127.0.0.1", 8000)
+debug_stops = []
+widget._request_lab.sig_stop_debug_server.connect(
+    lambda: debug_stops.append(True)
+)
+widget.set_debug_server_running(True)
+assert widget._request_lab._stop_debug_server.isEnabled()
+widget._request_lab._stop_debug_server.click()
+assert debug_stops
+widget.set_debug_server_running(False)
+
+widget._request_lab._render_result(
+    RequestExecution(
+        url="http://127.0.0.1:8000/health",
+        status_code=422,
+        reason="Unprocessable Entity",
+        json_body={
+            "detail": [
+                {
+                    "type": "missing",
+                    "loc": ["header", "token"],
+                    "msg": "Field required",
+                    "input": None,
+                }
+            ]
+        },
+    )
+)
+assert widget._request_lab._validation.topLevelItemCount() == 1
+
+widget._request_lab._record_history(
+    RequestExecution(
+        url="http://127.0.0.1:8000/health",
+        status_code=200,
+        reason="OK",
+        json_body={"ok": True},
+        elapsed_ms=2.5,
+    ),
+    command={
+        "method": "GET",
+        "base_url": "http://127.0.0.1:8000",
+        "path": "/health",
+        "headers": {"Authorization": "Bearer secret"},
+    },
+    route_id="GET /health",
+)
+assert widget._request_lab._history_tree.topLevelItemCount() == 1
+assert "***" in widget._request_lab._history_details.toPlainText()
+
+widget._request_lab.sig_request_completed.emit(
+    "GET /health",
+    RequestExecution(
+        url="http://127.0.0.1:8000/health",
+        status_code=200,
+        reason="OK",
+        elapsed_ms=12.5,
+    ),
+)
+runtime_stats = widget._runtime_evidence.routes["GET /health"]
+assert runtime_stats.request_count == 1
+assert runtime_stats.last_elapsed_ms == 12.5
+assert widget._diagram._clear_runtime.isEnabled()
+
+widget._diagram._clear_runtime.click()
+assert widget._runtime_evidence.routes == {}
+
+redacted = widget._request_lab._redacted_command(
+    {
+        "form": {"username": "alice", "password": "secret"},
+        "files": {
+            "document": "/tmp/private/report.pdf",
+            "documents": [
+                "/tmp/private/a.txt",
+                "/tmp/private/b.txt",
+            ],
+        },
+    }
+)
+assert redacted["form"]["username"] == "alice"
+assert redacted["form"]["password"] == "***"
+assert redacted["files"]["document"] == "report.pdf"
+assert redacted["files"]["documents"] == ["a.txt", "b.txt"]
+
+widget.set_baseline()
+widget.set_api_map(inspect_app(after))
+assert widget._changes_tree.topLevelItemCount() >= 1
+assert widget._current_diff is not None
+assert "GET /ready" in widget._current_diff.affected_routes
+
+widget.shutdown()
+widget.close()
+project_temp.cleanup()
+qt_app.processEvents()
+print("FastAPI Studio widget smoke test passed")
