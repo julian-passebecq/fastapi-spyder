@@ -437,6 +437,11 @@ class FastAPITelemetryWidget(QWidget):
         self._logs.setHeaderLabels(
             ["Severity", "Event", "Route", "Message", "Trace"]
         )
+        self._logs.setToolTip(
+            "Double-click an exception log to open the nearest source-backed "
+            "FastAPI operation. Other trace-linked logs focus their trace."
+        )
+        self._logs.itemDoubleClicked.connect(self._log_activated)
 
         self._tabs = QTabWidget()
         self._tabs.addTab(self._routes, "Routes")
@@ -688,6 +693,25 @@ class FastAPITelemetryWidget(QWidget):
                 ]
             )
             item.setToolTip(4, trace)
+            if log.trace_id:
+                item.setData(0, _ROLE_TRACE_ID, log.trace_id)
+                if (
+                    log.exception_type
+                    or log.event_name
+                    in {
+                        "http.server.request.exception",
+                        "fastapi.websocket.exception",
+                    }
+                ):
+                    function_name = self._store.preferred_source_function(
+                        log.trace_id
+                    )
+                    if function_name:
+                        item.setData(
+                            0,
+                            _ROLE_FUNCTION,
+                            function_name,
+                        )
             self._logs.addTopLevelItem(item)
 
         for column in range(self._logs.columnCount()):
@@ -723,3 +747,12 @@ class FastAPITelemetryWidget(QWidget):
         route_id = item.data(0, _ROLE_ROUTE_ID)
         if route_id:
             self.sig_route_selected.emit(str(route_id))
+
+    def _log_activated(self, item: QTreeWidgetItem, _column: int) -> None:
+        trace_id = item.data(0, _ROLE_TRACE_ID)
+        if trace_id:
+            self.select_trace(str(trace_id))
+
+        function_name = item.data(0, _ROLE_FUNCTION)
+        if function_name:
+            self.sig_function_selected.emit(str(function_name))
