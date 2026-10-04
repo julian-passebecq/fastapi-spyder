@@ -32,7 +32,9 @@ The remaining **human-only** qualification is intentionally small:
 6. generate demo traffic and visually confirm Telemetry/waterfall readability,
    then return through Diagram -> observed database node -> exact matching
    Telemetry trace;
-7. exercise 422, 404 and 500 once and verify the plugin remains responsive.
+7. exercise 422, 404 and 500 once, then double-click the 500 exception log
+   and verify it shows/resolves `fail_route`, focuses the exact trace and opens
+   the handler source; confirm the plugin remains responsive.
 
 Record these seven checks as **PASS / FAIL / BLOCKED / UNCERTAIN**. Any FAIL or
 UNCERTAIN result should be captured before adding more product features.
@@ -256,6 +258,10 @@ Acceptance:
 - 422 appears as validation evidence;
 - 404 does not inflate server-error metrics;
 - 500 appears as server error / exception evidence;
+- the 500 exception-log row shows a resolved source function ending in
+  `fail_route`;
+- double-clicking that exception log focuses the matching trace/waterfall and
+  opens `examples/data_platform_demo/app.py` at the handler definition;
 - the plugin remains responsive after all three.
 
 ## Exit criteria for first Windows UX qualification
