@@ -66,6 +66,12 @@ jobs:
       - name: Install with Spyder
         run: python -m pip install -e ".[dev,spyder]"
 
+      - name: Dependency health
+        run: python -m pip check
+
+      - name: Spyder version
+        run: spyder --version
+
       - name: Compile
         run: python -m compileall -q src tests examples/data_platform_demo
 
