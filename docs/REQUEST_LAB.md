@@ -109,9 +109,10 @@ select route
 
 The **Debug server** action only accepts loopback `http://` origins. It does
 not silently bind a development server to `0.0.0.0` or a remote hostname.
-The launcher deliberately does not make `uvicorn` a dependency of the Spyder
-plugin: `uvicorn` must exist in the selected project environment, where the
-FastAPI server dependency belongs.
+The Spyder extra includes `uvicorn` for the qualification environment. If Spyder
+uses a separate project interpreter, `uvicorn` must also exist there. Request
+Lab keeps the working directory from the successful inspection, even when
+opening source or setting a breakpoint changes Spyder's live working directory.
 
 Spyder still owns the debug session, stepping, console and Variable Explorer.
 FastAPI Studio does not implement a second debugger runtime. If Spyder is

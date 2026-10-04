@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 
 from fastapi import Depends, FastAPI, File, Form, Header, UploadFile
 from fastapi.testclient import TestClient
+from qtpy.QtCore import QEventLoop, QTimer
 from qtpy.QtWidgets import QApplication
 from spyder.app.find_plugins import find_external_plugins
 from spyder.plugins.ipythonconsole.plugin import IPythonConsole
@@ -165,6 +166,60 @@ assert native_summary.request_count == 2
 assert native_summary.validation_failure_count == 1
 
 demo_path = Path("examples/data_platform_demo/app.py").resolve()
+
+# Exercise the real asynchronous inspector, including a live-directory change
+# before its result arrives and the synchronous source-opening breakpoint signal.
+inspection_widget = FastAPIStudioWidget("fastapi_studio", None)
+inspection_widget.set_working_directory(demo_path.parent)
+inspection_widget._target.setCurrentText("app:app")
+inspection_widget.inspect_current_app()
+inspection_process = inspection_widget._process
+assert inspection_process is not None
+inspection_loop = QEventLoop()
+inspection_process.finished.connect(inspection_loop.quit)
+inspection_timeout = QTimer()
+inspection_timeout.setSingleShot(True)
+inspection_timeout.timeout.connect(inspection_loop.quit)
+inspection_timeout.start(30000)
+inspection_widget.set_working_directory(demo_path.parent.parent)
+inspection_loop.exec_()
+inspection_timeout.stop()
+assert inspection_widget._process is None, "Demo inspection timed out"
+assert inspection_widget._api_map is not None, (
+    inspection_widget._diagnostics.toPlainText()
+)
+assert inspection_widget._loaded_target == "app:app"
+assert Path(inspection_widget._loaded_workdir).samefile(demo_path.parent)
+inspection_widget._request_lab.select_route("GET /v1/jobs/{job_id}")
+for row in range(inspection_widget._request_lab._parameters.rowCount()):
+    name = inspection_widget._request_lab._parameters.item(row, 1).text()
+    value = {
+        "job_id": "job-qualification",
+        "x-api-key": "demo-secret",
+        "x-tenant-id": "contoso",
+    }.get(name, "qualification")
+    inspection_widget._request_lab._parameters.item(row, 4).setText(value)
+inspection_widget._request_lab.sig_set_breakpoint.connect(
+    lambda _filename, _line: inspection_widget.set_working_directory(
+        project_root
+    )
+)
+inspection_launches = []
+inspection_widget._request_lab.sig_start_debug_server.connect(
+    lambda target, workdir, host, port: inspection_launches.append(
+        (target, workdir, host, port)
+    )
+)
+inspection_widget.set_debug_server_available(True)
+inspection_widget._request_lab._debug_server.click()
+assert inspection_launches, inspection_widget._status.text()
+assert inspection_launches[0][0] == "app:app"
+assert Path(inspection_launches[0][1]).samefile(demo_path.parent)
+assert Path(inspection_widget._workdir).samefile(project_root)
+inspection_widget.shutdown()
+inspection_widget.close()
+print("PINNED_INSPECTION_DEBUG_WORKDIR PASS")
+
 spec = spec_from_file_location("data_platform_demo_app", demo_path)
 assert spec is not None and spec.loader is not None
 demo_module = module_from_spec(spec)
@@ -413,7 +468,8 @@ widget._request_lab._debug_server.click()
 assert debug_launches
 assert widget._request_lab._cancel_debug_wait.isEnabled()
 assert debug_launches[0][0] == "service.main:app"
-assert Path(debug_launches[0][1]).resolve() == project_root
+# Windows TEMP can use an 8.3 alias (e.g. RUNNER~1); compare directory identity.
+assert Path(debug_launches[0][1]).samefile(project_root), debug_launches[0]
 assert debug_launches[0][2:] == ("127.0.0.1", 8000)
 debug_stops = []
 widget._request_lab.sig_stop_debug_server.connect(
