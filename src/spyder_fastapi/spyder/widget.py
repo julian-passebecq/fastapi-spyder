@@ -1,34 +1,625 @@
-"""Minimal first Spyder panel; richer route and lineage views build on this."""
+"""FastAPI Studio main dock widget."""
 
 from __future__ import annotations
 
-from qtpy.QtWidgets import QLabel, QVBoxLayout
+import json
+import os
+import sys
+from collections import defaultdict
+
+from qtpy.QtCore import QProcess, Qt, Signal
+from qtpy.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QPushButton,
+    QSplitter,
+    QTabWidget,
+    QTextBrowser,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from spyder.api.widgets.main_widget import PluginMainWidget
+
+from spyder_fastapi.core import discover_targets, impacted_routes
+from spyder_fastapi.models import FastAPIMap, SourceRef
+
+
+_ROLE_ID = 32
+_ROLE_SOURCE_FILE = 33
+_ROLE_SOURCE_LINE = 34
+
+
+def _short_name(value: str) -> str:
+    return value.rsplit(".", 1)[-1]
+
+
+def _source_text(source: SourceRef | None) -> str:
+    if source is None or not source.file:
+        return "source unavailable"
+    if source.line:
+        return f"{source.file}:{source.line}"
+    return source.file
 
 
 class FastAPIStudioWidget(PluginMainWidget):
-    """Initial FastAPI Studio dock widget."""
+    """FastAPI architecture and lineage explorer."""
+
+    sig_open_source = Signal(str, int)
 
     def __init__(self, name=None, plugin=None, parent=None):
         super().__init__(name, plugin, parent)
-        self._summary = QLabel(
-            "FastAPI Studio\n\n"
-            "Architecture bridge ready. Next: app discovery, route tree and lineage view."
-        )
-        self._summary.setWordWrap(True)
-        layout = QVBoxLayout()
-        layout.addWidget(self._summary)
-        layout.addStretch(1)
-        self.setLayout(layout)
 
+        self._api_map: FastAPIMap | None = None
+        self._workdir = os.getcwd()
+        self._process: QProcess | None = None
+        self._stdout_chunks: list[str] = []
+        self._stderr_chunks: list[str] = []
+
+        self._build_ui()
+        self.set_working_directory(self._workdir)
+
+    # --- PluginMainWidget API
+    # ------------------------------------------------------------------
     def get_title(self):
         return "FastAPI Studio"
 
     def get_focus_widget(self):
-        return self._summary
+        return self._target
 
     def setup(self):
         pass
 
     def update_actions(self):
         pass
+
+    # --- UI construction
+    # ------------------------------------------------------------------
+    def _build_ui(self) -> None:
+        self._target = QComboBox()
+        self._target.setEditable(True)
+        self._target.setMinimumContentsLength(24)
+        self._target.setToolTip(
+            "FastAPI application target in module:attribute form, e.g. app.main:app"
+        )
+
+        self._discover_button = QPushButton("Discover")
+        self._discover_button.clicked.connect(self.discover_apps)
+
+        self._inspect_button = QPushButton("Inspect")
+        self._inspect_button.clicked.connect(self.inspect_current_app)
+
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("App"))
+        controls.addWidget(self._target, 1)
+        controls.addWidget(self._discover_button)
+        controls.addWidget(self._inspect_button)
+
+        self._workdir_label = QLabel()
+        self._workdir_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        self._status = QLabel("No FastAPI application inspected yet.")
+        self._status.setWordWrap(True)
+
+        self._tabs = QTabWidget()
+        self._overview = QTextBrowser()
+        self._tabs.addTab(self._overview, "Overview")
+
+        self._routes_tree = QTreeWidget()
+        self._routes_tree.setHeaderLabels(["Method", "Path"])
+        self._routes_tree.setRootIsDecorated(False)
+        self._routes_tree.currentItemChanged.connect(self._route_selected)
+        self._routes_tree.itemDoubleClicked.connect(self._open_tree_item_source)
+        self._route_details = QPlainTextEdit()
+        self._route_details.setReadOnly(True)
+        self._route_open = QPushButton("Open handler source")
+        self._route_open.clicked.connect(
+            lambda: self._open_tree_item_source(self._routes_tree.currentItem(), 0)
+        )
+        self._tabs.addTab(
+            self._split_page(self._routes_tree, self._route_details, self._route_open),
+            "Routes",
+        )
+
+        self._models_tree = QTreeWidget()
+        self._models_tree.setHeaderLabels(["Model", "Routes"])
+        self._models_tree.setRootIsDecorated(False)
+        self._models_tree.currentItemChanged.connect(self._model_selected)
+        self._model_details = QPlainTextEdit()
+        self._model_details.setReadOnly(True)
+        self._tabs.addTab(
+            self._split_page(self._models_tree, self._model_details),
+            "Models",
+        )
+
+        self._dependencies_tree = QTreeWidget()
+        self._dependencies_tree.setHeaderLabels(["Dependency", "Routes"])
+        self._dependencies_tree.setRootIsDecorated(False)
+        self._dependencies_tree.currentItemChanged.connect(self._dependency_selected)
+        self._dependencies_tree.itemDoubleClicked.connect(
+            self._open_tree_item_source
+        )
+        self._dependency_details = QPlainTextEdit()
+        self._dependency_details.setReadOnly(True)
+        self._dependency_open = QPushButton("Open dependency source")
+        self._dependency_open.clicked.connect(
+            lambda: self._open_tree_item_source(
+                self._dependencies_tree.currentItem(), 0
+            )
+        )
+        self._tabs.addTab(
+            self._split_page(
+                self._dependencies_tree,
+                self._dependency_details,
+                self._dependency_open,
+            ),
+            "Dependencies",
+        )
+
+        lineage_page = QWidget()
+        lineage_layout = QVBoxLayout(lineage_page)
+        lineage_controls = QHBoxLayout()
+        lineage_controls.addWidget(QLabel("Route"))
+        self._lineage_route = QComboBox()
+        self._lineage_route.currentTextChanged.connect(
+            self._populate_lineage_for_route
+        )
+        lineage_controls.addWidget(self._lineage_route, 1)
+        lineage_layout.addLayout(lineage_controls)
+
+        self._lineage_tree = QTreeWidget()
+        self._lineage_tree.setHeaderLabels(["Relationship", "Node", "Kind"])
+        self._lineage_tree.itemDoubleClicked.connect(self._open_tree_item_source)
+        lineage_layout.addWidget(self._lineage_tree, 1)
+        self._tabs.addTab(lineage_page, "Lineage")
+
+        self._json_view = QPlainTextEdit()
+        self._json_view.setReadOnly(True)
+        self._tabs.addTab(self._json_view, "JSON")
+
+        self._diagnostics = QPlainTextEdit()
+        self._diagnostics.setReadOnly(True)
+        self._diagnostics.setPlaceholderText(
+            "Application import output and inspection errors appear here."
+        )
+        self._tabs.addTab(self._diagnostics, "Diagnostics")
+
+        layout = QVBoxLayout()
+        layout.addLayout(controls)
+        layout.addWidget(self._workdir_label)
+        layout.addWidget(self._status)
+        layout.addWidget(self._tabs, 1)
+        self.setLayout(layout)
+
+    @staticmethod
+    def _split_page(
+        tree: QTreeWidget,
+        details: QPlainTextEdit,
+        action: QPushButton | None = None,
+    ) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(tree)
+        splitter.addWidget(details)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+        layout.addWidget(splitter, 1)
+        if action is not None:
+            layout.addWidget(action)
+        return page
+
+    # --- Project/app discovery
+    # ------------------------------------------------------------------
+    def set_working_directory(self, path: str) -> None:
+        self._workdir = os.path.abspath(path)
+        self._workdir_label.setText(f"Working directory: {self._workdir}")
+        self._workdir_label.setToolTip(self._workdir)
+
+    def discover_apps(self) -> None:
+        self._status.setText("Scanning Python files for FastAPI applications...")
+        candidates = discover_targets(self._workdir)
+
+        current = self._target.currentText().strip()
+        self._target.blockSignals(True)
+        self._target.clear()
+        for candidate in candidates:
+            self._target.addItem(candidate.target)
+        self._target.blockSignals(False)
+
+        if current and current not in {candidate.target for candidate in candidates}:
+            self._target.setEditText(current)
+        elif candidates:
+            self._target.setCurrentText(candidates[0].target)
+
+        if not candidates:
+            self._status.setText(
+                "No simple FastAPI() assignment found. Enter module:attribute manually."
+            )
+        else:
+            self._status.setText(
+                f"Discovered {len(candidates)} FastAPI application target(s)."
+            )
+
+    # --- Subprocess inspection
+    # ------------------------------------------------------------------
+    def inspect_current_app(self) -> None:
+        target = self._target.currentText().strip()
+        if not target:
+            self._status.setText("Enter or discover a FastAPI app target first.")
+            return
+
+        if self._process is not None:
+            self._process.kill()
+            self._process.deleteLater()
+
+        self._stdout_chunks = []
+        self._stderr_chunks = []
+        self._diagnostics.clear()
+        self._inspect_button.setEnabled(False)
+        self._status.setText(f"Inspecting {target}...")
+
+        process = QProcess(self)
+        process.setWorkingDirectory(self._workdir)
+        process.readyReadStandardOutput.connect(self._read_stdout)
+        process.readyReadStandardError.connect(self._read_stderr)
+        process.finished.connect(self._inspection_finished)
+        self._process = process
+
+        process.start(
+            sys.executable,
+            [
+                "-m",
+                "spyder_fastapi.cli",
+                target,
+                "--indent",
+                "0",
+            ],
+        )
+
+    def _read_stdout(self) -> None:
+        if self._process is None:
+            return
+        self._stdout_chunks.append(
+            bytes(self._process.readAllStandardOutput()).decode(
+                "utf-8", errors="replace"
+            )
+        )
+
+    def _read_stderr(self) -> None:
+        if self._process is None:
+            return
+        text = bytes(self._process.readAllStandardError()).decode(
+            "utf-8", errors="replace"
+        )
+        self._stderr_chunks.append(text)
+        self._diagnostics.appendPlainText(text.rstrip())
+
+    def _inspection_finished(self, exit_code: int, _exit_status) -> None:
+        self._inspect_button.setEnabled(True)
+        stdout = "".join(self._stdout_chunks).strip()
+        stderr = "".join(self._stderr_chunks).strip()
+
+        if exit_code != 0:
+            self._status.setText(
+                f"Inspection failed with exit code {exit_code}. See Diagnostics."
+            )
+            if stderr:
+                self._status.setToolTip(stderr)
+            return
+
+        try:
+            payload = json.loads(stdout)
+            api_map = FastAPIMap.model_validate(payload)
+        except (json.JSONDecodeError, ValueError) as exc:
+            self._status.setText(
+                "Inspector returned invalid JSON. See Diagnostics for details."
+            )
+            self._diagnostics.appendPlainText(f"\nJSON parse error: {exc}\n{stdout}")
+            return
+
+        self.set_api_map(api_map)
+        if stderr:
+            self._status.setToolTip(stderr)
+        self._process.deleteLater()
+        self._process = None
+
+    # --- Rendering
+    # ------------------------------------------------------------------
+    def set_api_map(self, api_map: FastAPIMap) -> None:
+        self._api_map = api_map
+        self._populate_overview()
+        self._populate_routes()
+        self._populate_models()
+        self._populate_dependencies()
+        self._populate_lineage_routes()
+        self._json_view.setPlainText(
+            api_map.model_dump_json(by_alias=True, indent=2)
+        )
+
+        self._status.setText(
+            f"Loaded {api_map.title}: "
+            f"{len(api_map.routes)} routes, "
+            f"{len(api_map.models)} models, "
+            f"{len(api_map.dependencies)} dependencies."
+        )
+
+    def _populate_overview(self) -> None:
+        if self._api_map is None:
+            return
+
+        shared_dependencies = 0
+        for dependency in self._api_map.dependencies:
+            if len(impacted_routes(self._api_map, dependency.id)) > 1:
+                shared_dependencies += 1
+
+        shared_models = 0
+        for model in self._api_map.models:
+            if len(impacted_routes(self._api_map, f"model:{model.name}")) > 1:
+                shared_models += 1
+
+        self._overview.setHtml(
+            "<h3>{}</h3>"
+            "<p><b>Version:</b> {}<br>"
+            "<b>OpenAPI:</b> {}<br>"
+            "<b>Routes:</b> {}<br>"
+            "<b>Models:</b> {}<br>"
+            "<b>Dependencies:</b> {}</p>"
+            "<p><b>Shared dependency blast-radius nodes:</b> {}<br>"
+            "<b>Shared schema blast-radius nodes:</b> {}</p>"
+            "<p>The lineage view is derived from FastAPI's actual route, "
+            "Pydantic and Depends() structures. Double-click source-backed "
+            "nodes to open their Python implementation.</p>".format(
+                self._api_map.title,
+                self._api_map.version or "-",
+                self._api_map.openapi_version,
+                len(self._api_map.routes),
+                len(self._api_map.models),
+                len(self._api_map.dependencies),
+                shared_dependencies,
+                shared_models,
+            )
+        )
+
+    def _populate_routes(self) -> None:
+        self._routes_tree.clear()
+        if self._api_map is None:
+            return
+
+        for route in self._api_map.routes:
+            item = QTreeWidgetItem([route.method, route.path])
+            item.setData(0, _ROLE_ID, route.id)
+            self._set_item_source(item, route.source)
+            item.setToolTip(1, route.handler)
+            self._routes_tree.addTopLevelItem(item)
+
+        self._routes_tree.resizeColumnToContents(0)
+        if self._routes_tree.topLevelItemCount():
+            self._routes_tree.setCurrentItem(self._routes_tree.topLevelItem(0))
+
+    def _route_selected(self, item: QTreeWidgetItem | None, _previous) -> None:
+        if item is None or self._api_map is None:
+            self._route_details.clear()
+            return
+
+        route_id = item.data(0, _ROLE_ID)
+        route = next(
+            (candidate for candidate in self._api_map.routes if candidate.id == route_id),
+            None,
+        )
+        if route is None:
+            return
+
+        dependencies_by_id = {
+            dependency.id: dependency for dependency in self._api_map.dependencies
+        }
+        dependency_names = [
+            dependencies_by_id[dep_id].name
+            for dep_id in route.dependencies
+            if dep_id in dependencies_by_id
+        ]
+
+        params = "\n".join(
+            f"  {parameter.location:6} {parameter.name}: "
+            f"{parameter.type_name}"
+            f"{' (required)' if parameter.required else ''}"
+            for parameter in route.parameters
+        ) or "  -"
+
+        deps = "\n".join(f"  {_short_name(name)}" for name in dependency_names) or "  -"
+
+        self._route_details.setPlainText(
+            f"{route.id}\n\n"
+            f"Handler\n  {route.handler}\n"
+            f"  {_source_text(route.source)}\n\n"
+            f"Status\n  {route.status_code or 'default'}\n\n"
+            f"Tags\n  {', '.join(route.tags) or '-'}\n\n"
+            f"Parameters\n{params}\n\n"
+            f"Request models\n  {', '.join(route.request_models) or '-'}\n\n"
+            f"Dependencies\n{deps}\n\n"
+            f"Response model\n  {route.response_model or '-'}"
+        )
+
+        self._lineage_route.setCurrentText(route.id)
+
+    def _populate_models(self) -> None:
+        self._models_tree.clear()
+        if self._api_map is None:
+            return
+
+        for model in self._api_map.models:
+            routes = impacted_routes(self._api_map, f"model:{model.name}")
+            item = QTreeWidgetItem([model.name, str(len(routes))])
+            item.setData(0, _ROLE_ID, model.name)
+            item.setToolTip(1, "\n".join(routes))
+            self._models_tree.addTopLevelItem(item)
+
+        self._models_tree.resizeColumnToContents(1)
+        if self._models_tree.topLevelItemCount():
+            self._models_tree.setCurrentItem(self._models_tree.topLevelItem(0))
+
+    def _model_selected(self, item: QTreeWidgetItem | None, _previous) -> None:
+        if item is None or self._api_map is None:
+            self._model_details.clear()
+            return
+
+        model_name = item.data(0, _ROLE_ID)
+        model = next(
+            (candidate for candidate in self._api_map.models if candidate.name == model_name),
+            None,
+        )
+        if model is None:
+            return
+
+        routes = impacted_routes(self._api_map, f"model:{model.name}")
+        route_text = "\n".join(f"  {route}" for route in routes) or "  -"
+        schema = json.dumps(model.schema_, indent=2, sort_keys=True)
+        self._model_details.setPlainText(
+            f"{model.name}\n\n"
+            f"Blast radius ({len(routes)} route(s))\n{route_text}\n\n"
+            f"OpenAPI schema\n{schema}"
+        )
+
+    def _populate_dependencies(self) -> None:
+        self._dependencies_tree.clear()
+        if self._api_map is None:
+            return
+
+        for dependency in self._api_map.dependencies:
+            routes = impacted_routes(self._api_map, dependency.id)
+            item = QTreeWidgetItem([_short_name(dependency.name), str(len(routes))])
+            item.setData(0, _ROLE_ID, dependency.id)
+            self._set_item_source(item, dependency.source)
+            item.setToolTip(0, dependency.name)
+            item.setToolTip(1, "\n".join(routes))
+            self._dependencies_tree.addTopLevelItem(item)
+
+        self._dependencies_tree.resizeColumnToContents(1)
+        if self._dependencies_tree.topLevelItemCount():
+            self._dependencies_tree.setCurrentItem(
+                self._dependencies_tree.topLevelItem(0)
+            )
+
+    def _dependency_selected(self, item: QTreeWidgetItem | None, _previous) -> None:
+        if item is None or self._api_map is None:
+            self._dependency_details.clear()
+            return
+
+        dependency_id = item.data(0, _ROLE_ID)
+        dependency = next(
+            (
+                candidate
+                for candidate in self._api_map.dependencies
+                if candidate.id == dependency_id
+            ),
+            None,
+        )
+        if dependency is None:
+            return
+
+        dependencies_by_id = {
+            candidate.id: candidate for candidate in self._api_map.dependencies
+        }
+        children = [
+            dependencies_by_id[child].name
+            for child in dependency.children
+            if child in dependencies_by_id
+        ]
+        params = "\n".join(
+            f"  {parameter.location:6} {parameter.name}: {parameter.type_name}"
+            for parameter in dependency.parameters
+        ) or "  -"
+        routes = impacted_routes(self._api_map, dependency.id)
+        route_text = "\n".join(f"  {route}" for route in routes) or "  -"
+
+        self._dependency_details.setPlainText(
+            f"{dependency.name}\n"
+            f"{_source_text(dependency.source)}\n\n"
+            f"Cache per request\n  {dependency.use_cache}\n\n"
+            f"Scope\n  {dependency.scope or '-'}\n\n"
+            f"Request parameters\n{params}\n\n"
+            f"Nested dependencies\n"
+            + ("\n".join(f"  {_short_name(child)}" for child in children) or "  -")
+            + f"\n\nBlast radius ({len(routes)} route(s))\n{route_text}"
+        )
+
+    def _populate_lineage_routes(self) -> None:
+        self._lineage_route.blockSignals(True)
+        self._lineage_route.clear()
+        if self._api_map is not None:
+            self._lineage_route.addItems([route.id for route in self._api_map.routes])
+        self._lineage_route.blockSignals(False)
+
+        if self._lineage_route.count():
+            self._lineage_route.setCurrentIndex(0)
+            self._populate_lineage_for_route(self._lineage_route.currentText())
+        else:
+            self._lineage_tree.clear()
+
+    def _populate_lineage_for_route(self, route_id: str) -> None:
+        self._lineage_tree.clear()
+        if self._api_map is None or not route_id:
+            return
+
+        nodes = {node.id: node for node in self._api_map.lineage.nodes}
+        adjacency = defaultdict(list)
+        for edge in self._api_map.lineage.edges:
+            adjacency[edge.source].append(edge)
+
+        root_id = f"route:{route_id}"
+        root = nodes.get(root_id)
+        if root is None:
+            return
+
+        root_item = QTreeWidgetItem(["route", root.label, root.kind])
+        self._set_item_source(root_item, root.source)
+        self._lineage_tree.addTopLevelItem(root_item)
+
+        def add_children(parent_item, node_id: str, path: set[str]) -> None:
+            edges = sorted(
+                adjacency.get(node_id, []),
+                key=lambda edge: (
+                    edge.relation,
+                    nodes.get(edge.target).label if nodes.get(edge.target) else edge.target,
+                ),
+            )
+            for edge in edges:
+                node = nodes.get(edge.target)
+                if node is None:
+                    continue
+                child = QTreeWidgetItem([edge.relation, node.label, node.kind])
+                child.setData(0, _ROLE_ID, node.id)
+                self._set_item_source(child, node.source)
+                parent_item.addChild(child)
+                if node.id not in path:
+                    add_children(child, node.id, path | {node.id})
+
+        add_children(root_item, root_id, {root_id})
+        root_item.setExpanded(True)
+        self._lineage_tree.expandToDepth(2)
+        self._lineage_tree.resizeColumnToContents(0)
+        self._lineage_tree.resizeColumnToContents(2)
+
+    # --- Source navigation
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _set_item_source(item: QTreeWidgetItem, source: SourceRef | None) -> None:
+        if source is None or not source.file:
+            return
+        item.setData(0, _ROLE_SOURCE_FILE, source.file)
+        item.setData(0, _ROLE_SOURCE_LINE, source.line or 1)
+
+    def _open_tree_item_source(
+        self,
+        item: QTreeWidgetItem | None,
+        _column: int = 0,
+    ) -> None:
+        if item is None:
+            return
+        filename = item.data(0, _ROLE_SOURCE_FILE)
+        line = item.data(0, _ROLE_SOURCE_LINE)
+        if filename:
+            self.sig_open_source.emit(str(filename), int(line or 1))
