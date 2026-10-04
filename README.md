@@ -127,8 +127,8 @@ Implemented in the bootstrap branch:
 
 Remaining before calling V0.1 complete:
 
-- route/model search and filters
 - polished empty/error/loading states
+- a first real in-Spyder manual smoke test on Windows/Linux
 
 ### V0.2 - Change safely
 
