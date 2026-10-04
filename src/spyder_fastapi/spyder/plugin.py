@@ -17,7 +17,12 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
 
     NAME = "fastapi_studio"
     REQUIRES = []
-    OPTIONAL = [Plugins.Editor, Plugins.MainInterpreter, Plugins.WorkingDirectory]
+    OPTIONAL = [
+        Plugins.Debugger,
+        Plugins.Editor,
+        Plugins.MainInterpreter,
+        Plugins.WorkingDirectory,
+    ]
     WIDGET_CLASS = FastAPIStudioWidget
     CONF_SECTION = NAME
     TABIFY = [Plugins.Editor]
@@ -37,9 +42,55 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
     @on_plugin_available(plugin=Plugins.Editor)
     def on_editor_available(self):
         editor = self.get_plugin(Plugins.Editor)
-        self.get_widget().sig_open_source.connect(
+        widget = self.get_widget()
+        widget.sig_open_source.connect(
             lambda filename, line: editor.load(filename, line)
         )
+        widget.sig_set_breakpoint.connect(self._set_handler_breakpoint)
+
+    def _set_handler_breakpoint(self, filename: str, line: int) -> None:
+        """Set, but never toggle off, a Spyder breakpoint for a route handler."""
+
+        editor = self.get_plugin(Plugins.Editor)
+        widget = self.get_widget()
+
+        editor.load(filename, line)
+        codeeditor = editor.get_codeeditor_for_filename(filename)
+        if codeeditor is None:
+            widget.set_status_message(
+                f"Could not open {filename} to set a breakpoint."
+            )
+            return
+
+        manager = getattr(codeeditor, "breakpoints_manager", None)
+        if manager is None:
+            widget.set_status_message(
+                "Spyder's Debugger is not available for this editor. "
+                "The handler source was opened instead."
+            )
+            return
+
+        existing = {
+            int(lineno)
+            for lineno, _condition in manager.get_breakpoints()
+        }
+        if line not in existing:
+            manager.toogle_breakpoint(line)
+
+        refreshed = {
+            int(lineno)
+            for lineno, _condition in manager.get_breakpoints()
+        }
+        if line in refreshed:
+            widget.set_status_message(
+                f"Breakpoint ready at {filename}:{line}. "
+                "Run the FastAPI server under Spyder's debugger, then replay "
+                "the request from Request Lab."
+            )
+        else:
+            widget.set_status_message(
+                f"Spyder could not place a breakpoint at {filename}:{line}."
+            )
 
     @on_plugin_available(plugin=Plugins.MainInterpreter)
     def on_main_interpreter_available(self):
@@ -63,7 +114,9 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
 
     @on_plugin_teardown(plugin=Plugins.Editor)
     def on_editor_teardown(self):
-        self.get_widget().sig_open_source.disconnect()
+        widget = self.get_widget()
+        widget.sig_open_source.disconnect()
+        widget.sig_set_breakpoint.disconnect(self._set_handler_breakpoint)
 
     @on_plugin_teardown(plugin=Plugins.MainInterpreter)
     def on_main_interpreter_teardown(self):
