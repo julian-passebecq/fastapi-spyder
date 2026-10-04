@@ -24,8 +24,17 @@ class SourceRef(BaseModel):
     qualname: str | None = None
 
 
+class AppCandidate(BaseModel):
+    """Statically discovered FastAPI application target."""
+
+    target: str
+    module: str
+    attribute: str
+    source: SourceRef
+
+
 class ParameterSpec(BaseModel):
-    """One request parameter accepted by a FastAPI route."""
+    """One request parameter accepted by a route or dependency."""
 
     name: str
     location: Literal["path", "query", "header", "cookie", "body"]
@@ -41,6 +50,7 @@ class DependencySpec(BaseModel):
     source: SourceRef
     use_cache: bool = True
     scope: str | None = None
+    parameters: list[ParameterSpec] = Field(default_factory=list)
     children: list[str] = Field(default_factory=list)
 
 
