@@ -59,6 +59,7 @@ class ModelSpec(BaseModel):
 
     name: str
     source: SourceRef | None = None
+    field_sources: dict[str, SourceRef] = Field(default_factory=dict)
     schema_: dict[str, Any] = Field(default_factory=dict, alias="schema")
 
     model_config = {"populate_by_name": True}
