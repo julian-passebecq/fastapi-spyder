@@ -245,24 +245,47 @@ class RequestLabWidget(QWidget):
         self._populate_parameter_table(template)
 
         has_body = template.body_example is not None or template.body_required
-        self._body.setEnabled(has_body)
-        self._reset_body.setEnabled(has_body)
+        content_type = template.body_content_type
+        json_body_supported = (
+            content_type is None
+            or content_type == "application/json"
+            or content_type.endswith("+json")
+        )
+        body_enabled = has_body and json_body_supported
+
+        self._body.setEnabled(body_enabled)
+        self._reset_body.setEnabled(body_enabled)
         self._open_body_source.setEnabled(
             self._body_source is not None and bool(self._body_source.file)
         )
 
-        if has_body:
+        if has_body and json_body_supported:
+            media = content_type or "application/json"
             self._body_label.setText(
-                "JSON body"
+                f"JSON body [{media}]"
                 + (f" - {template.body_model}" if template.body_model else "")
                 + (" (required)" if template.body_required else "")
             )
             self._reset_body_example()
+        elif has_body:
+            self._body_label.setText(
+                f"Body [{content_type}] - media type not supported yet"
+            )
+            self._body.setPlainText(
+                "Request Lab currently sends JSON bodies only."
+            )
         else:
             self._body_label.setText("JSON body - none")
             self._body.clear()
 
-        self._send.setEnabled(True)
+        if has_body and template.body_required and not json_body_supported:
+            self._send.setEnabled(False)
+            self.sig_status.emit(
+                "Request Lab currently supports JSON request bodies only; "
+                f"this route expects {content_type}."
+            )
+        else:
+            self._send.setEnabled(True)
 
     def _populate_parameter_table(self, template: RequestTemplate) -> None:
         self._parameters.setRowCount(len(template.parameters))
