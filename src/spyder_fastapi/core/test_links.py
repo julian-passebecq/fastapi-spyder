@@ -178,9 +178,10 @@ def _request_path(value: str) -> str:
 def _route_pattern(path: str) -> re.Pattern[str]:
     chunks: list[str] = []
     cursor = 0
-    for match in re.finditer(r"\{[^{}]+\}", path):
+    for match in re.finditer(r"\{([^{}]+)\}", path):
         chunks.append(re.escape(path[cursor:match.start()]))
-        chunks.append(r"[^/]+")
+        parameter = match.group(1)
+        chunks.append(r".+" if parameter.endswith(":path") else r"[^/]+")
         cursor = match.end()
     chunks.append(re.escape(path[cursor:]))
     return re.compile("^" + "".join(chunks) + "$")
@@ -219,7 +220,7 @@ class _TestCallVisitor(ast.NodeVisitor):
         self.api_map = api_map
         self.references: list[TestReference] = []
         self._classes: list[str] = []
-        self._functions: list[str] = []
+        self._functions: list[tuple[str, int | None]] = []
 
     def visit_ClassDef(self, node: ast.ClassDef):
         self._classes.append(node.name)
@@ -227,12 +228,12 @@ class _TestCallVisitor(ast.NodeVisitor):
         self._classes.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef):
-        self._functions.append(node.name)
+        self._functions.append((node.name, getattr(node, "lineno", None)))
         self.generic_visit(node)
         self._functions.pop()
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
-        self._functions.append(node.name)
+        self._functions.append((node.name, getattr(node, "lineno", None)))
         self.generic_visit(node)
         self._functions.pop()
 
@@ -241,7 +242,7 @@ class _TestCallVisitor(ast.NodeVisitor):
             self.generic_visit(node)
             return
 
-        function_name = self._functions[-1]
+        function_name, function_line = self._functions[-1]
         if not function_name.startswith("test_"):
             self.generic_visit(node)
             return
@@ -253,11 +254,11 @@ class _TestCallVisitor(ast.NodeVisitor):
             if match is not None:
                 route, match_kind = match
                 qualname = ".".join(
-                    [*self._classes, *self._functions]
+                    [*self._classes, *[name for name, _line in self._functions]]
                 )
-                line = getattr(node, "lineno", None)
+                call_line = getattr(node, "lineno", None)
                 ref_id = (
-                    f"test:{self.file_path}:{line or 0}:"
+                    f"test:{self.file_path}:{call_line or 0}:"
                     f"{method}:{route.id}"
                 )
                 self.references.append(
@@ -270,10 +271,11 @@ class _TestCallVisitor(ast.NodeVisitor):
                         match_kind=match_kind,
                         source=SourceRef(
                             file=str(self.file_path),
-                            line=line,
-                            execution_line=line,
+                            line=function_line,
+                            execution_line=function_line,
                             qualname=qualname,
                         ),
+                        call_line=call_line,
                     )
                 )
 
