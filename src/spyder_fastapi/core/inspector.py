@@ -445,11 +445,15 @@ def inspect_app(app: FastAPI) -> FastAPIMap:
 
         for field in getattr(route.dependant, "body_params", ()):
             _register_model_type(
-            _field_type(field),
+                _field_type(field),
+                model_sources,
+                model_field_sources,
+            )
+        _register_model_type(
+            route.response_model,
             model_sources,
             model_field_sources,
         )
-        _register_model_type(route.response_model, model_sources)
 
         methods = sorted(route.methods or {"GET"})
         for method in methods:
