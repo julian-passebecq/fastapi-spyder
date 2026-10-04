@@ -134,8 +134,10 @@ jobs:
           widget._request_lab.set_app_target("service.main:app")
           widget._request_lab.set_debug_server_available(True)
           assert widget._request_lab._debug_server.isEnabled()
+          widget._request_lab._parameters.item(0, 4).setText("smoke-token")
           widget._request_lab._debug_server.click()
           assert debug_launches
+          assert widget._request_lab._cancel_debug_wait.isEnabled()
           assert debug_launches[0][0] == "service.main:app"
           assert debug_launches[0][2:] == ("127.0.0.1", 8000)
 
