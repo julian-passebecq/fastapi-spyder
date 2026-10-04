@@ -45,11 +45,15 @@ jobs:
       - name: Install with Spyder
         run: python -m pip install -e ".[dev,spyder]"
 
+      - name: Test demo client
+        run: python -m pytest -q examples/data_platform_demo/tests
+
       - name: Smoke test Spyder widget
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           python - <<'PY'
+          from importlib.util import module_from_spec, spec_from_file_location
           from inspect import signature
           from pathlib import Path
           from tempfile import TemporaryDirectory
@@ -59,7 +63,7 @@ jobs:
           from qtpy.QtWidgets import QApplication
           from spyder.plugins.ipythonconsole.plugin import IPythonConsole
 
-          from spyder_fastapi.core import inspect_app
+          from spyder_fastapi.core import NativeTelemetryStore, inspect_app
           from spyder_fastapi.models import RequestExecution
           from spyder_fastapi.telemetry_capture import configure_native_telemetry
           from spyder_fastapi.spyder.plugin import FastAPIStudioPlugin
@@ -154,6 +158,80 @@ jobs:
           native_summary = widget._diagram._native_route_summaries["GET /health"]
           assert native_summary.request_count == 2
           assert native_summary.validation_failure_count == 1
+
+          demo_path = Path("examples/data_platform_demo/app.py").resolve()
+          spec = spec_from_file_location("data_platform_demo_app", demo_path)
+          assert spec is not None and spec.loader is not None
+          demo_module = module_from_spec(spec)
+          spec.loader.exec_module(demo_module)
+
+          demo_map = inspect_app(demo_module.app)
+          widget.set_working_directory(demo_path.parent)
+          widget.set_api_map(demo_map)
+          assert len(demo_map.routes) == 6
+          assert len(demo_map.dependencies) >= 2
+          assert len(widget._test_index.references) >= 5
+
+          demo_native_path = project_root / "demo-native-telemetry.jsonl"
+          demo_capture = configure_native_telemetry(demo_native_path)
+          assert demo_capture["event"] == "capture_configured"
+
+          demo_client = TestClient(
+              demo_module.app,
+              raise_server_exceptions=False,
+          )
+          demo_headers = {
+              "x-api-key": "demo-secret",
+              "x-tenant-id": "contoso",
+          }
+          assert demo_client.post(
+              "/v1/ingestions",
+              headers=demo_headers,
+              json={
+                  "source": "crm",
+                  "record_count": 25,
+                  "schema_version": 1,
+              },
+          ).status_code == 202
+          assert demo_client.post(
+              "/v1/ingestions",
+              headers=demo_headers,
+              json={
+                  "source": "crm",
+                  "record_count": 0,
+                  "schema_version": 1,
+              },
+          ).status_code == 422
+          assert demo_client.get("/v1/debug/fail").status_code == 500
+
+          widget._native_telemetry = NativeTelemetryStore()
+          widget._native_telemetry_path = demo_native_path
+          widget._native_telemetry_offset = 0
+          widget._native_telemetry_partial = b""
+          widget._poll_native_telemetry()
+
+          categories = widget._native_telemetry.external_span_categories()
+          assert categories == {
+              "database": 1,
+              "http-client": 1,
+              "messaging": 1,
+          }
+          assert widget._telemetry._external._value.text() == "3"
+          assert widget._telemetry._validation._value.text() == "1"
+          assert widget._telemetry._exceptions._value.text() == "1"
+          assert any(
+              span.name == "fastapi.background_task"
+              for span in widget._native_telemetry.spans
+          )
+          assert any(
+              span.name == "publish ingestion.accepted"
+              for span in widget._native_telemetry.spans
+          )
+          assert widget._telemetry._traces.columnCount() == 6
+          assert widget._telemetry._waterfall._rows
+
+          widget.set_working_directory(project_root)
+          widget.set_api_map(inspect_app(before))
 
           assert FastAPIStudioPlugin.NAME == "fastapi_studio"
           assert "method" in signature(IPythonConsole.run_script).parameters
