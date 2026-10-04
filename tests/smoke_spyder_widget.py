@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 from fastapi import Depends, FastAPI, File, Form, Header, UploadFile
 from fastapi.testclient import TestClient
 from qtpy.QtWidgets import QApplication
+from spyder.app.find_plugins import find_external_plugins
 from spyder.plugins.ipythonconsole.plugin import IPythonConsole
 
 from spyder_fastapi.core import NativeTelemetryStore, inspect_app
@@ -62,9 +63,13 @@ plugin_entries = {
     entry.name: entry.value
     for entry in entry_points(group="spyder.plugins")
 }
-assert plugin_entries["spyder_fastapi"] == (
+assert plugin_entries["fastapi_studio"] == (
     "spyder_fastapi.spyder.plugin:FastAPIStudioPlugin"
 )
+
+external_plugins = find_external_plugins()
+assert external_plugins["fastapi_studio"] is FastAPIStudioPlugin
+assert FastAPIStudioPlugin.NAME == "fastapi_studio"
 
 qt_app = QApplication.instance() or QApplication([])
 project_temp = TemporaryDirectory(prefix="FastAPI Studio ")
