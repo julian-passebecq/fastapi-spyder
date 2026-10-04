@@ -226,7 +226,7 @@ class RequestExecution(BaseModel):
     elapsed_ms: float | None = None
     error: str | None = None
 
-class TestReference(BaseModel):
+class RouteTestReference(BaseModel):
     """Statically observed HTTP call from a project test to a FastAPI route."""
 
     id: str
@@ -242,7 +242,7 @@ class TestReference(BaseModel):
 class RouteTestIndex(BaseModel):
     """Project-local static route-to-test links."""
 
-    references: list[TestReference] = Field(default_factory=list)
+    references: list[RouteTestReference] = Field(default_factory=list)
     scanned_files: int = 0
 
 
