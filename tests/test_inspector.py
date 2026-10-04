@@ -59,9 +59,9 @@ def test_inspection_extracts_contract_source_and_lineage():
         if dependency.name.endswith(".auth")
     )
     assert [
-        (parameter.location, parameter.name)
+        (parameter.location, parameter.name, parameter.required)
         for parameter in auth_dependency.parameters
-    ] == [("header", "authorization")]
+    ] == [("header", "authorization", True)]
 
     edge_relations = {edge.relation for edge in result.lineage.edges}
     assert {"accepts", "validates_as", "depends_on", "handled_by", "returns"} <= edge_relations
