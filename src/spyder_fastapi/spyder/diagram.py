@@ -36,6 +36,7 @@ from spyder_fastapi.models import (
     DiagramProjection,
     FastAPIMap,
     RouteTestIndex,
+    RuntimeEvidence,
 )
 
 
@@ -91,11 +92,13 @@ class FastAPIDiagramWidget(QWidget):
     """Interactive projections of FastAPI contract/dependency lineage."""
 
     sig_open_source = Signal(str, int)
+    sig_clear_runtime = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._api_map: FastAPIMap | None = None
         self._test_index = RouteTestIndex()
+        self._runtime_evidence = RuntimeEvidence()
         self._projection: DiagramProjection | None = None
         self._node_items: dict[str, QGraphicsRectItem] = {}
 
@@ -116,6 +119,17 @@ class FastAPIDiagramWidget(QWidget):
         )
         self._show_tests.toggled.connect(self._render_current)
 
+        self._show_runtime = QCheckBox("Runtime")
+        self._show_runtime.setChecked(True)
+        self._show_runtime.setToolTip(
+            "Show observed Request Lab end-to-end client timing on routes."
+        )
+        self._show_runtime.toggled.connect(self._render_current)
+
+        self._clear_runtime = QPushButton("Clear runtime")
+        self._clear_runtime.setEnabled(False)
+        self._clear_runtime.clicked.connect(self.sig_clear_runtime.emit)
+
         self._fit = QPushButton("Fit")
         self._fit.clicked.connect(self.fit_to_view)
         self._zoom_in = QPushButton("+")
@@ -133,6 +147,8 @@ class FastAPIDiagramWidget(QWidget):
         controls.addWidget(self._focus_label)
         controls.addWidget(self._focus, 1)
         controls.addWidget(self._show_tests)
+        controls.addWidget(self._show_runtime)
+        controls.addWidget(self._clear_runtime)
         controls.addWidget(self._fit)
         controls.addWidget(self._zoom_out)
         controls.addWidget(self._reset_zoom)
@@ -180,6 +196,19 @@ class FastAPIDiagramWidget(QWidget):
 
     def set_show_tests(self, visible: bool) -> None:
         self._show_tests.setChecked(bool(visible))
+
+    def set_runtime_evidence(self, evidence: RuntimeEvidence) -> None:
+        self._runtime_evidence = evidence
+        total = sum(
+            stats.request_count
+            for stats in evidence.routes.values()
+        )
+        self._clear_runtime.setEnabled(total > 0)
+        self._show_runtime.setToolTip(
+            "Show observed Request Lab end-to-end client timing on routes "
+            f"({total} request(s))."
+        )
+        self._render_current()
 
     def select_route(self, route_id: str) -> None:
         if self._api_map is None:
@@ -321,9 +350,19 @@ class FastAPIDiagramWidget(QWidget):
         self._draw_edges(projection, positions)
         self._draw_nodes(projection, positions)
 
+        runtime_samples = sum(
+            stats.request_count
+            for stats in self._runtime_evidence.routes.values()
+        )
+        runtime_suffix = (
+            f" / {runtime_samples} observed request(s)"
+            if self._show_runtime.isChecked() and runtime_samples
+            else ""
+        )
         self._summary.setText(
             f"{projection.title} - {len(projection.nodes)} nodes / "
             f"{len(projection.edges)} relationships"
+            f"{runtime_suffix}"
         )
         self.fit_to_view()
 
@@ -405,16 +444,36 @@ class FastAPIDiagramWidget(QWidget):
             return QBrush(palette.window())
         return QBrush(palette.base())
 
-    @staticmethod
-    def _node_text(node: DiagramNode) -> str:
+    def _node_text(self, node: DiagramNode) -> str:
         header = node.kind.upper()
         display_label = node.label
         if node.kind in {"dependency", "handler", "test"}:
             display_label = node.label.rsplit(".", 1)[-1]
         text = f"{header}\n{display_label}"
+
         if node.kind in {"dependency", "model"} and node.impact_count:
             suffix = "route" if node.impact_count == 1 else "routes"
             text += f"\nused by {node.impact_count} {suffix}"
+
+        if (
+            node.kind == "route"
+            and node.route_id
+            and self._show_runtime.isChecked()
+        ):
+            stats = self._runtime_evidence.routes.get(node.route_id)
+            if stats is not None:
+                status = (
+                    str(stats.last_status_code)
+                    if stats.last_status_code is not None
+                    else "ERR"
+                )
+                elapsed = (
+                    f"{stats.last_elapsed_ms:.1f} ms"
+                    if stats.last_elapsed_ms is not None
+                    else "no timing"
+                )
+                text += f"\n{status} | {elapsed}"
+
         return text
 
     def _draw_nodes(
@@ -568,12 +627,14 @@ class FastAPIDiagramWidget(QWidget):
             impacted = impacted_routes(self._api_map, node.id)
 
         route_tests = []
+        route_runtime = None
         if node.kind == "route" and node.route_id:
             route_tests = [
                 reference
                 for reference in self._test_index.references
                 if reference.route_id == node.route_id
             ]
+            route_runtime = self._runtime_evidence.routes.get(node.route_id)
 
         lines = [
             f"{node.kind.upper()}",
@@ -598,6 +659,35 @@ class FastAPIDiagramWidget(QWidget):
                         f"  {reference.test_name} [{reference.match_kind}]"
                         for reference in route_tests
                     ],
+                ]
+            )
+        if route_runtime is not None:
+            lines.extend(
+                [
+                    "",
+                    "Observed Request Lab runtime",
+                    "  evidence: end-to-end client elapsed",
+                    f"  requests: {route_runtime.request_count}",
+                    f"  timed: {route_runtime.timed_count}",
+                    (
+                        f"  last: {route_runtime.last_elapsed_ms:.1f} ms"
+                        if route_runtime.last_elapsed_ms is not None
+                        else "  last: -"
+                    ),
+                    (
+                        f"  average: {route_runtime.average_elapsed_ms:.1f} ms"
+                        if route_runtime.average_elapsed_ms is not None
+                        else "  average: -"
+                    ),
+                    (
+                        f"  min / max: {route_runtime.min_elapsed_ms:.1f} / "
+                        f"{route_runtime.max_elapsed_ms:.1f} ms"
+                        if route_runtime.min_elapsed_ms is not None
+                        and route_runtime.max_elapsed_ms is not None
+                        else "  min / max: -"
+                    ),
+                    f"  last status: {route_runtime.last_status_code or '-'}",
+                    f"  transport errors: {route_runtime.transport_error_count}",
                 ]
             )
         if incoming:
