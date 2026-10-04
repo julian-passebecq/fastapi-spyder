@@ -42,10 +42,13 @@ def _build_url(command: dict[str, Any]) -> str:
 
     if query:
         parts = urlsplit(url)
-        encoded = urlencode(
-            [(str(key), str(value)) for key, value in query.items()],
-            doseq=True,
-        )
+        pairs: list[tuple[str, str]] = []
+        for key, value in query.items():
+            if isinstance(value, (list, tuple)):
+                pairs.extend((str(key), str(item)) for item in value)
+            else:
+                pairs.append((str(key), str(value)))
+        encoded = urlencode(pairs, doseq=True)
         url = urlunsplit(
             (parts.scheme, parts.netloc, parts.path, encoded, parts.fragment)
         )
