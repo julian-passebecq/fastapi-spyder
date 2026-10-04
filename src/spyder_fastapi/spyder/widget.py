@@ -61,6 +61,7 @@ class FastAPIStudioWidget(PluginMainWidget):
     sig_open_source = Signal(str, int)
     sig_set_breakpoint = Signal(str, int)
     sig_start_debug_server = Signal(str, str, str, int)
+    sig_stop_debug_server = Signal()
 
     def __init__(self, name=None, plugin=None, parent=None):
         super().__init__(name, plugin, parent)
@@ -277,6 +278,9 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._request_lab.sig_start_debug_server.connect(
             self.sig_start_debug_server.emit
         )
+        self._request_lab.sig_stop_debug_server.connect(
+            self.sig_stop_debug_server.emit
+        )
         self._request_lab.set_python_executable(self._python_executable)
         self._request_lab.set_working_directory(self._workdir)
         self._tabs.addTab(self._request_lab, "Request Lab")
@@ -328,6 +332,9 @@ class FastAPIStudioWidget(PluginMainWidget):
 
     def set_debug_server_available(self, available: bool) -> None:
         self._request_lab.set_debug_server_available(available)
+
+    def set_debug_server_running(self, running: bool) -> None:
+        self._request_lab.set_debug_server_running(running)
 
     def shutdown(self) -> None:
         """Terminate child processes owned by FastAPI Studio."""
