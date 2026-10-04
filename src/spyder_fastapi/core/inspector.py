@@ -247,6 +247,10 @@ def _dependant_parameters(dependant: Any) -> list[ParameterSpec]:
             params.append(
                 ParameterSpec(
                     name=field.name,
+                    alias=(
+                        str(getattr(field, "alias", "") or "")
+                        or None
+                    ),
                     location=location,
                     type_name=_type_name(_field_type(field)),
                     required=_field_required(field),
@@ -338,13 +342,14 @@ def _lineage_for_route(
 
     for parameter in route_spec.parameters:
         parameter_id = (
-            f"parameter:{route_spec.id}:{parameter.location}:{parameter.name}"
+            f"parameter:{route_spec.id}:{parameter.location}:"
+            f"{parameter.alias or parameter.name}"
         )
         graph.nodes.append(
             LineageNode(
                 id=parameter_id,
                 kind="parameter",
-                label=f"{parameter.location}:{parameter.name}",
+                label=f"{parameter.location}:{parameter.alias or parameter.name}",
                 route_id=route_spec.id,
             )
         )
@@ -386,14 +391,15 @@ def _lineage_for_route(
 
         for parameter in dep.parameters:
             parameter_id = (
-                f"parameter:{dep_id}:{parameter.location}:{parameter.name}"
+                f"parameter:{dep_id}:{parameter.location}:"
+                f"{parameter.alias or parameter.name}"
             )
             if not any(node.id == parameter_id for node in graph.nodes):
                 graph.nodes.append(
                     LineageNode(
                         id=parameter_id,
                         kind="parameter",
-                        label=f"{parameter.location}:{parameter.name}",
+                        label=f"{parameter.location}:{parameter.alias or parameter.name}",
                     )
                 )
             graph.edges.append(
