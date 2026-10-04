@@ -56,10 +56,14 @@ def _build_url(command: dict[str, Any]) -> str:
 def _form_body(
     values: dict[str, Any],
 ) -> tuple[bytes, str]:
-    encoded = urlencode(
-        [(str(key), str(value)) for key, value in values.items()],
-        doseq=True,
-    ).encode("utf-8")
+    pairs: list[tuple[str, str]] = []
+    for key, value in values.items():
+        if isinstance(value, (list, tuple)):
+            pairs.extend((str(key), str(item)) for item in value)
+        else:
+            pairs.append((str(key), str(value)))
+
+    encoded = urlencode(pairs, doseq=True).encode("utf-8")
     return encoded, "application/x-www-form-urlencoded"
 
 
@@ -73,13 +77,20 @@ def _multipart_body(
     def add_line(value: str = "") -> None:
         chunks.append(value.encode("utf-8") + b"\r\n")
 
-    for name, value in values.items():
-        add_line(f"--{boundary}")
-        add_line(
-            f'Content-Disposition: form-data; name="{str(name)}"'
-        )
-        add_line()
-        add_line(str(value))
+    for name, raw_values in values.items():
+        if isinstance(raw_values, (list, tuple)):
+            field_values = list(raw_values)
+        else:
+            field_values = [raw_values]
+
+        safe_field = str(name).replace('"', "_").replace("\r", "_").replace("\n", "_")
+        for value in field_values:
+            add_line(f"--{boundary}")
+            add_line(
+                f'Content-Disposition: form-data; name="{safe_field}"'
+            )
+            add_line()
+            add_line(str(value))
 
     for name, raw_paths in files.items():
         if isinstance(raw_paths, (list, tuple)):
