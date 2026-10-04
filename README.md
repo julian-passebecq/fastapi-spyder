@@ -59,7 +59,7 @@ POST /books/metadata
                                   +--> StoredBook
 ```
 
-We deliberately do **not** pretend static source inspection can reliably infer arbitrary S3, database, Kafka or HTTP side effects. A later runtime telemetry layer can add observed downstream edges (SQL spans, HTTP calls, queues, storage) to the same graph. Deterministic lineage first; observed runtime lineage second.
+We deliberately do **not** pretend static source inspection can reliably infer arbitrary S3, database, Kafka or HTTP side effects. FastAPI Studio now overlays those relationships only when OpenTelemetry actually observes downstream DB/HTTP/messaging/RPC spans. Deterministic lineage first; observed runtime lineage second.
 
 ## Architecture
 
@@ -122,7 +122,8 @@ The repository now contains the v0.1 foundation:
 - Spyder-native handler breakpoint handoff using the first executable line
 - local uvicorn launch through Spyder's public debugfile/IPython Console API
 - headless CLI
-- CI across Python 3.11-3.13 plus an offscreen Qt Spyder widget smoke test
+- CI across Python 3.11-3.13 plus cross-platform offscreen Qt Spyder smoke tests
+- Windows qualification on a real `windows-latest` GitHub runner
 - tests, a small bookstore example and a realistic data-platform demo client
 
 Inspect the bookstore example without Spyder:
@@ -131,6 +132,30 @@ Inspect the bookstore example without Spyder:
 pip install -e ".[dev]"
 PYTHONPATH=examples/bookstore fastapi-spyder app:app
 ```
+
+## Qualification
+
+The same reusable Spyder widget smoke runs on Linux and Windows in CI. It
+verifies plugin entry-point discovery, application inspection, the realistic
+data-platform demo, Request Lab, native FastAPI telemetry, runtime lineage,
+Diagram -> Telemetry drilldown and the Qt widget lifecycle.
+
+Run it locally with:
+
+```bash
+QT_QPA_PLATFORM=offscreen python tests/smoke_spyder_widget.py
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+python tests\smoke_spyder_widget.py
+```
+
+Headless CI cannot certify visual ergonomics or a real editor/debugger
+interaction. The reproducible manual acceptance flow is documented in
+`docs/MANUAL-QUALIFICATION.md`.
 
 ## End-to-end demo client
 
