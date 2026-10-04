@@ -95,6 +95,8 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._native_telemetry_offset = 0
         self._native_telemetry_partial = b""
         self._workdir = os.getcwd()
+        self._inspection_workdir: str | None = None
+        self._loaded_workdir: str | None = None
         self._python_executable = sys.executable
         self._process: QProcess | None = None
         self._stdout_chunks: list[str] = []
@@ -431,7 +433,10 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._workdir = os.path.abspath(path)
         self._workdir_label.setText(f"Working directory: {self._workdir}")
         self._workdir_label.setToolTip(self._workdir)
-        if hasattr(self, "_request_lab"):
+        if (
+            hasattr(self, "_request_lab")
+            and self._loaded_workdir is None
+        ):
             self._request_lab.set_working_directory(self._workdir)
 
     def set_python_executable(self, path: str) -> None:
@@ -486,11 +491,14 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._stdout_chunks = []
         self._stderr_chunks = []
         self._diagnostics.clear()
+        self._inspection_workdir = self._workdir
         self._inspect_button.setEnabled(False)
         self._status.setText(f"Inspecting {target}...")
 
         process = QProcess(self)
-        process.setWorkingDirectory(self._workdir)
+        process.setWorkingDirectory(
+            self._inspection_workdir or self._workdir
+        )
 
         # The FastAPI project usually lives in Spyder's selected interpreter,
         # while this plugin can be installed in Spyder's own environment.
@@ -566,6 +574,9 @@ class FastAPIStudioWidget(PluginMainWidget):
                 return
 
             self._loaded_target = self._target.currentText().strip() or None
+            self._loaded_workdir = (
+                self._inspection_workdir or self._workdir
+            )
             self.set_api_map(api_map)
             if stderr:
                 self._status.setToolTip(stderr)
@@ -604,6 +615,9 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._diagram.set_runtime_evidence(self._runtime_evidence)
         self._diagram.set_native_telemetry(self._native_telemetry)
         self._populate_test_links()
+        self._request_lab.set_working_directory(
+            self._loaded_workdir or self._workdir
+        )
         self._request_lab.set_api_map(api_map)
         self._request_lab.set_app_target(
             self._loaded_target
