@@ -266,3 +266,57 @@ def test_request_runner_sends_multiple_files_for_same_field(tmp_path):
     assert "first payload" in raw
     assert "second payload" in raw
 
+def test_request_runner_repeats_form_values_for_lists():
+    server, thread = _serve()
+    try:
+        host, port = server.server_address
+        result = execute_request(
+            {
+                "method": "POST",
+                "base_url": f"http://{host}:{port}",
+                "path": "/form-list",
+                "form": {
+                    "values": ["one", "two", "three"],
+                },
+            }
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+    assert result.error is None
+    assert result.json_body["body"] == {
+        "values": ["one", "two", "three"],
+    }
+
+
+def test_request_runner_repeats_multipart_values_for_lists(tmp_path):
+    upload = tmp_path / "doc.txt"
+    upload.write_text("payload", encoding="utf-8")
+
+    server, thread = _serve()
+    try:
+        host, port = server.server_address
+        result = execute_request(
+            {
+                "method": "POST",
+                "base_url": f"http://{host}:{port}",
+                "path": "/multipart-list",
+                "multipart": {
+                    "tags": ["alpha", "beta"],
+                },
+                "files": {"document": str(upload)},
+            }
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+    assert result.error is None
+    raw = result.json_body["body"]["raw"]
+    assert raw.count('name="tags"') == 2
+    assert "alpha" in raw
+    assert "beta" in raw
+
