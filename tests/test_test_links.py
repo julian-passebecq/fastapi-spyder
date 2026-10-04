@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from spyder_fastapi.core import discover_route_tests, inspect_app, tests_for_route
+from spyder_fastapi.core import discover_route_tests, inspect_app, route_tests
 
 
 def build_app() -> FastAPI:
@@ -53,7 +53,7 @@ def test_not_a_http_client():
     assert index.scanned_files == 1
     assert len(index.references) == 3
 
-    get_refs = tests_for_route(index, "GET /users/{user_id}")
+    get_refs = route_tests(index, "GET /users/{user_id}")
     assert len(get_refs) == 2
     assert {ref.match_kind for ref in get_refs} == {"template"}
     assert {
@@ -63,7 +63,7 @@ def test_not_a_http_client():
         "test_request_method",
     }
 
-    post_refs = tests_for_route(index, "POST /users")
+    post_refs = route_tests(index, "POST /users")
     assert len(post_refs) == 1
     assert post_refs[0].match_kind == "exact"
     assert post_refs[0].test_name == "TestUsers.test_create_user"
