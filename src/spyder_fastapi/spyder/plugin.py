@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from qtpy.QtGui import QIcon
 from spyder.api.plugin_registration.decorators import (
     on_plugin_available,
@@ -20,6 +22,7 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
     OPTIONAL = [
         Plugins.Debugger,
         Plugins.Editor,
+        Plugins.IPythonConsole,
         Plugins.MainInterpreter,
         Plugins.WorkingDirectory,
     ]
@@ -92,6 +95,67 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
                 f"Spyder could not place a breakpoint at {filename}:{line}."
             )
 
+    @on_plugin_available(plugin=Plugins.IPythonConsole)
+    def on_ipython_console_available(self):
+        widget = self.get_widget()
+        widget.sig_start_debug_server.connect(self._start_debug_server)
+        widget.set_debug_server_available(True)
+
+    def _start_debug_server(
+        self,
+        target: str,
+        working_directory: str,
+        host: str,
+        port: int,
+    ) -> None:
+        """Run the small uvicorn launcher via Spyder's native debugfile API."""
+
+        widget = self.get_widget()
+        ipython_console = self.get_plugin(
+            Plugins.IPythonConsole,
+            error=False,
+        )
+        if ipython_console is None:
+            widget.set_status_message(
+                "Spyder IPython Console is not available for debug-server launch."
+            )
+            return
+
+        if ipython_console.get_current_shellwidget() is None:
+            widget.set_status_message(
+                "Open an IPython Console in Spyder before starting the debug server."
+            )
+            return
+
+        if ":" not in target or any(character.isspace() for character in target):
+            widget.set_status_message(
+                "Debug server requires a module:attribute FastAPI target."
+            )
+            return
+
+        launcher = Path(__file__).resolve().parents[1] / "debug_server.py"
+        args = f"{target} --host {host} --port {int(port)}"
+
+        try:
+            ipython_console.run_script(
+                str(launcher),
+                working_directory,
+                args=args,
+                current_client=True,
+                method="debugfile",
+            )
+        except Exception as exc:
+            widget.set_status_message(
+                f"Spyder could not start the FastAPI debug server: {exc}"
+            )
+            return
+
+        widget.set_status_message(
+            f"Debug launch sent to Spyder for {target} on "
+            f"http://{host}:{port}. Continue the debugger if it stops in the "
+            "launcher, then use Replay selected when the server is listening."
+        )
+
     @on_plugin_available(plugin=Plugins.MainInterpreter)
     def on_main_interpreter_available(self):
         main_interpreter = self.get_plugin(Plugins.MainInterpreter)
@@ -117,6 +181,15 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
         widget = self.get_widget()
         widget.sig_open_source.disconnect()
         widget.sig_set_breakpoint.disconnect(self._set_handler_breakpoint)
+
+    @on_plugin_teardown(plugin=Plugins.IPythonConsole)
+    def on_ipython_console_teardown(self):
+        widget = self.get_widget()
+        try:
+            widget.sig_start_debug_server.disconnect(self._start_debug_server)
+        except (TypeError, RuntimeError):
+            pass
+        widget.set_debug_server_available(False)
 
     @on_plugin_teardown(plugin=Plugins.MainInterpreter)
     def on_main_interpreter_teardown(self):
