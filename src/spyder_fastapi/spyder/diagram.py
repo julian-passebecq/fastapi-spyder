@@ -567,6 +567,14 @@ class FastAPIDiagramWidget(QWidget):
         if self._api_map is not None and node.kind in {"dependency", "model"}:
             impacted = impacted_routes(self._api_map, node.id)
 
+        route_tests = []
+        if node.kind == "route" and node.route_id:
+            route_tests = [
+                reference
+                for reference in self._test_index.references
+                if reference.route_id == node.route_id
+            ]
+
         lines = [
             f"{node.kind.upper()}",
             node.label,
@@ -579,6 +587,17 @@ class FastAPIDiagramWidget(QWidget):
                     "",
                     f"Blast radius: {len(impacted)} route(s)",
                     *[f"  {route}" for route in impacted],
+                ]
+            )
+        if route_tests:
+            lines.extend(
+                [
+                    "",
+                    f"Tests: {len(route_tests)} linked call(s)",
+                    *[
+                        f"  {reference.test_name} [{reference.match_kind}]"
+                        for reference in route_tests
+                    ],
                 ]
             )
         if incoming:
