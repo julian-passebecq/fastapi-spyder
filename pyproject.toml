@@ -22,6 +22,7 @@ spyder = [
   "spyder>=6",
   "qtpy",
   "opentelemetry-sdk>=1.44",
+  "uvicorn>=0.30",
 ]
 dev = [
   "pytest>=8",
