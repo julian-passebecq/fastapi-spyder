@@ -26,6 +26,7 @@ def build_app() -> FastAPI:
 
     @app.post("/items/{item_id}", response_model=ItemOut, status_code=201)
     def create_item(item_id: int, item: ItemIn, connection: str = Depends(db)):
+        """Create an item while giving execution-line detection a docstring."""
         _ = (item_id, connection)
         return ItemOut(name=item.name, stored=True)
 
@@ -46,6 +47,9 @@ def test_inspection_extracts_contract_source_and_lineage():
     assert route.source.line is not None
     assert route.source.execution_line is not None
     assert route.source.execution_line > route.source.line
+    with open(route.source.file, encoding="utf-8") as source_file:
+        source_lines = source_file.read().splitlines()
+    assert source_lines[route.source.execution_line - 1].strip().startswith("_ =")
 
     locations = {(param.location, param.name) for param in route.parameters}
     assert ("path", "item_id") in locations
