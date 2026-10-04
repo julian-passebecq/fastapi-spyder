@@ -7,6 +7,7 @@ from collections import defaultdict, deque
 from qtpy.QtCore import QPointF, QRectF, Qt, Signal
 from qtpy.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPolygonF
 from qtpy.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QGraphicsPathItem,
     QGraphicsPolygonItem,
@@ -30,7 +31,12 @@ from spyder_fastapi.core import (
     impacted_routes,
     route_projection,
 )
-from spyder_fastapi.models import DiagramNode, DiagramProjection, FastAPIMap
+from spyder_fastapi.models import (
+    DiagramNode,
+    DiagramProjection,
+    FastAPIMap,
+    RouteTestIndex,
+)
 
 
 _NODE_ID = 0
@@ -89,6 +95,7 @@ class FastAPIDiagramWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._api_map: FastAPIMap | None = None
+        self._test_index = RouteTestIndex()
         self._projection: DiagramProjection | None = None
         self._node_items: dict[str, QGraphicsRectItem] = {}
 
@@ -102,6 +109,12 @@ class FastAPIDiagramWidget(QWidget):
         self._focus = QComboBox()
         self._focus.setMinimumContentsLength(28)
         self._focus.currentIndexChanged.connect(self._focus_changed)
+
+        self._show_tests = QCheckBox("Tests")
+        self._show_tests.setToolTip(
+            "Overlay statically discovered route-to-test links."
+        )
+        self._show_tests.toggled.connect(self._render_current)
 
         self._fit = QPushButton("Fit")
         self._fit.clicked.connect(self.fit_to_view)
@@ -119,6 +132,7 @@ class FastAPIDiagramWidget(QWidget):
         controls.addWidget(self._mode)
         controls.addWidget(self._focus_label)
         controls.addWidget(self._focus, 1)
+        controls.addWidget(self._show_tests)
         controls.addWidget(self._fit)
         controls.addWidget(self._zoom_out)
         controls.addWidget(self._reset_zoom)
@@ -154,6 +168,14 @@ class FastAPIDiagramWidget(QWidget):
     def set_api_map(self, api_map: FastAPIMap) -> None:
         self._api_map = api_map
         self._repopulate_focus()
+        self._render_current()
+
+    def set_test_index(self, index: RouteTestIndex) -> None:
+        self._test_index = index
+        self._show_tests.setToolTip(
+            "Overlay statically discovered route-to-test links "
+            f"({len(index.references)} linked call(s))."
+        )
         self._render_current()
 
     def select_route(self, route_id: str) -> None:
@@ -244,17 +266,32 @@ class FastAPIDiagramWidget(QWidget):
             return None
 
         mode = self._mode.currentData()
+        include_tests = self._show_tests.isChecked()
         if mode == "global":
-            return global_projection(self._api_map)
+            return global_projection(
+                self._api_map,
+                self._test_index,
+                include_tests=include_tests,
+            )
 
         focus = self._focus.currentData()
         if focus is None:
             return None
 
         if mode == "impact":
-            return impact_projection(self._api_map, str(focus))
+            return impact_projection(
+                self._api_map,
+                str(focus),
+                self._test_index,
+                include_tests=include_tests,
+            )
 
-        return route_projection(self._api_map, str(focus))
+        return route_projection(
+            self._api_map,
+            str(focus),
+            self._test_index,
+            include_tests=include_tests,
+        )
 
     # --- Rendering
     # ------------------------------------------------------------------
@@ -361,13 +398,15 @@ class FastAPIDiagramWidget(QWidget):
             return QBrush(palette.midlight())
         if node.kind == "handler":
             return QBrush(palette.button())
+        if node.kind == "test":
+            return QBrush(palette.window())
         return QBrush(palette.base())
 
     @staticmethod
     def _node_text(node: DiagramNode) -> str:
         header = node.kind.upper()
         display_label = node.label
-        if node.kind in {"dependency", "handler"}:
+        if node.kind in {"dependency", "handler", "test"}:
             display_label = node.label.rsplit(".", 1)[-1]
         text = f"{header}\n{display_label}"
         if node.kind in {"dependency", "model"} and node.impact_count:
