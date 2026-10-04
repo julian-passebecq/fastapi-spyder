@@ -6,8 +6,9 @@ import json
 import os
 import sys
 from collections import defaultdict
+from pathlib import Path
 
-from qtpy.QtCore import QProcess, Qt, Signal
+from qtpy.QtCore import QProcess, QProcessEnvironment, Qt, Signal
 from qtpy.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -55,6 +56,7 @@ class FastAPIStudioWidget(PluginMainWidget):
 
         self._api_map: FastAPIMap | None = None
         self._workdir = os.getcwd()
+        self._python_executable = sys.executable
         self._process: QProcess | None = None
         self._stdout_chunks: list[str] = []
         self._stderr_chunks: list[str] = []
@@ -100,6 +102,10 @@ class FastAPIStudioWidget(PluginMainWidget):
 
         self._workdir_label = QLabel()
         self._workdir_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        self._interpreter_label = QLabel()
+        self._interpreter_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.set_python_executable(self._python_executable)
 
         self._status = QLabel("No FastAPI application inspected yet.")
         self._status.setWordWrap(True)
@@ -190,6 +196,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         layout = QVBoxLayout()
         layout.addLayout(controls)
         layout.addWidget(self._workdir_label)
+        layout.addWidget(self._interpreter_label)
         layout.addWidget(self._status)
         layout.addWidget(self._tabs, 1)
         self.setLayout(layout)
@@ -218,6 +225,16 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._workdir = os.path.abspath(path)
         self._workdir_label.setText(f"Working directory: {self._workdir}")
         self._workdir_label.setToolTip(self._workdir)
+
+    def set_python_executable(self, path: str) -> None:
+        """Use Spyder's selected interpreter for project inspection."""
+
+        if path:
+            self._python_executable = os.path.abspath(path)
+        self._interpreter_label.setText(
+            f"Python interpreter: {self._python_executable}"
+        )
+        self._interpreter_label.setToolTip(self._python_executable)
 
     def discover_apps(self) -> None:
         self._status.setText("Scanning Python files for FastAPI applications...")
@@ -264,13 +281,26 @@ class FastAPIStudioWidget(PluginMainWidget):
 
         process = QProcess(self)
         process.setWorkingDirectory(self._workdir)
+
+        # The FastAPI project usually lives in Spyder's selected interpreter,
+        # while this plugin can be installed in Spyder's own environment.
+        # Expose the plugin package to the child without requiring a second
+        # fastapi-spyder installation in the project environment.
+        environment = QProcessEnvironment.systemEnvironment()
+        package_root = str(Path(__file__).resolve().parents[2])
+        current_pythonpath = environment.value("PYTHONPATH")
+        pythonpath_parts = [package_root]
+        if current_pythonpath:
+            pythonpath_parts.append(current_pythonpath)
+        environment.insert("PYTHONPATH", os.pathsep.join(pythonpath_parts))
+        process.setProcessEnvironment(environment)
         process.readyReadStandardOutput.connect(self._read_stdout)
         process.readyReadStandardError.connect(self._read_stderr)
         process.finished.connect(self._inspection_finished)
         self._process = process
 
         process.start(
-            sys.executable,
+            self._python_executable,
             [
                 "-m",
                 "spyder_fastapi.cli",
