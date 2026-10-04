@@ -236,6 +236,7 @@ class TestReference(BaseModel):
     requested_path: str
     match_kind: Literal["exact", "template"]
     source: SourceRef
+    call_line: int | None = None
 
 
 class RouteTestIndex(BaseModel):
