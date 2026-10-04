@@ -7,6 +7,39 @@ usability.
 Use the realistic fake client under `examples/data_platform_demo`. Do not
 replace it with a toy app during qualification.
 
+
+## Fast path after a green Windows CI run
+
+When the current commit has a green **spyder-windows** job, do not manually
+repeat checks that CI already proves. The Windows job already validates package
+installation, Spyder plugin discovery, dependency health, demo tests, the
+cross-platform Qt widget smoke, native telemetry capture, observed DB/HTTP/
+messaging lineage, Diagram -> Telemetry trace drilldown and offscreen visual
+captures.
+
+The remaining **human-only** qualification is intentionally small:
+
+1. launch Spyder from the qualification environment and verify the FastAPI
+   Studio dock is visible, dockable, closable and reopenable;
+2. use the real **Discover** -> **Inspect** buttons on
+   `examples/data_platform_demo`;
+3. double-click one route, `get_tenant_context`, one model and one linked test
+   and verify the Spyder editor lands on the expected source;
+4. exercise Diagram pan/zoom/Fit at a normal laptop resolution and confirm the
+   graph remains usable;
+5. start the debug server from Request Lab, hit a real handler breakpoint and
+   verify the debugger/Variable Explorer context;
+6. generate demo traffic and visually confirm Telemetry/waterfall readability,
+   then return through Diagram -> observed database node -> exact matching
+   Telemetry trace;
+7. exercise 422, 404 and 500 once and verify the plugin remains responsive.
+
+Record these seven checks as **PASS / FAIL / BLOCKED / UNCERTAIN**. Any FAIL or
+UNCERTAIN result should be captured before adding more product features.
+
+The full checklist below remains the canonical diagnostic path when one of
+those seven checks fails or when the Windows CI job is not green.
+
 ## Supported qualification target
 
 - OS: Windows 11 first, then Linux
