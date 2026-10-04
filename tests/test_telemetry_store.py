@@ -1,4 +1,9 @@
-from spyder_fastapi.core.telemetry import NativeTelemetryStore
+from spyder_fastapi.core.telemetry import (
+    NativeTelemetryStore,
+    is_external_span,
+    span_category,
+    span_target,
+)
 
 
 def _server_span(
@@ -210,4 +215,76 @@ def test_validation_failures_are_not_counted_as_server_errors():
     assert summary.error_rate == 0
     assert summary.validation_failure_count == 1
     assert store.validation_failure_count() == 1
+
+def test_external_span_classification_uses_otel_semantic_attributes():
+    store = NativeTelemetryStore()
+    trace_id = "c" * 32
+
+    database = {
+        "signal": "span",
+        "trace_id": trace_id,
+        "span_id": "4" * 16,
+        "parent_span_id": "1" * 16,
+        "name": "SELECT telemetry_demo.jobs",
+        "kind": "CLIENT",
+        "start_ns": 2_000_000,
+        "end_ns": 6_000_000,
+        "duration_ms": 4.0,
+        "attributes": {
+            "db.system.name": "postgresql",
+            "db.namespace": "telemetry_demo",
+            "db.operation.name": "SELECT",
+        },
+        "scope_name": "demo.database",
+    }
+    outbound = {
+        "signal": "span",
+        "trace_id": trace_id,
+        "span_id": "5" * 16,
+        "parent_span_id": "1" * 16,
+        "name": "POST",
+        "kind": "CLIENT",
+        "start_ns": 6_000_000,
+        "end_ns": 9_000_000,
+        "duration_ms": 3.0,
+        "attributes": {
+            "http.request.method": "POST",
+            "server.address": "events.internal",
+        },
+        "scope_name": "demo.http",
+    }
+    messaging = {
+        "signal": "span",
+        "trace_id": trace_id,
+        "span_id": "6" * 16,
+        "parent_span_id": "1" * 16,
+        "name": "publish ingestion.accepted",
+        "kind": "PRODUCER",
+        "start_ns": 9_000_000,
+        "end_ns": 10_000_000,
+        "duration_ms": 1.0,
+        "attributes": {
+            "messaging.system": "kafka",
+            "messaging.destination.name": "ingestion.accepted",
+        },
+        "scope_name": "demo.messaging",
+    }
+
+    for payload in (database, outbound, messaging):
+        assert store.ingest(payload)
+
+    db_span, http_span, message_span = store.spans
+    assert span_category(db_span) == "database"
+    assert span_target(db_span) == "postgresql:telemetry_demo"
+    assert span_category(http_span) == "http-client"
+    assert span_target(http_span) == "events.internal"
+    assert span_category(message_span) == "messaging"
+    assert span_target(message_span) == "ingestion.accepted"
+    assert all(is_external_span(span) for span in store.spans)
+    assert store.external_span_count() == 3
+    assert store.external_span_categories() == {
+        "database": 1,
+        "http-client": 1,
+        "messaging": 1,
+    }
 
