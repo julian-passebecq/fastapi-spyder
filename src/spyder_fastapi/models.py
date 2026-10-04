@@ -351,6 +351,7 @@ class NativeRouteTelemetry(BaseModel):
     request_count: int = 0
     error_count: int = 0
     error_rate: float = 0.0
+    validation_failure_count: int = 0
     average_ms: float | None = None
     p50_ms: float | None = None
     p95_ms: float | None = None
