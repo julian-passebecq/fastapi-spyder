@@ -211,6 +211,7 @@ class RequestLabWidget(QWidget):
         )
         self._history_tree.setRootIsDecorated(False)
         self._history_tree.currentItemChanged.connect(self._history_selected)
+        self._history_tree.itemDoubleClicked.connect(self._open_history_source)
         history_splitter.addWidget(self._history_tree)
 
         self._history_details = QPlainTextEdit()
@@ -709,6 +710,19 @@ class RequestLabWidget(QWidget):
             ]
         )
         item.setData(0, _ROLE_HISTORY_INDEX, index)
+        if self._api_map is not None and route_id is not None:
+            route = next(
+                (candidate for candidate in self._api_map.routes if candidate.id == route_id),
+                None,
+            )
+            if route is not None and route.source.file:
+                item.setData(0, _ROLE_SOURCE_FILE, route.source.file)
+                item.setData(0, _ROLE_SOURCE_LINE, route.source.line or 1)
+                item.setToolTip(
+                    2,
+                    f"Double-click to open {route.handler} in Spyder.",
+                )
+
         self._history_tree.insertTopLevelItem(0, item)
         self._clear_history_button.setEnabled(True)
         self._history_tree.setCurrentItem(item)
@@ -759,6 +773,18 @@ class RequestLabWidget(QWidget):
             + "\n\nResponse\n"
             + result.model_dump_json(indent=2)
         )
+
+    def _open_history_source(
+        self,
+        item: QTreeWidgetItem | None,
+        _column: int,
+    ) -> None:
+        if item is None:
+            return
+        filename = item.data(0, _ROLE_SOURCE_FILE)
+        line = item.data(0, _ROLE_SOURCE_LINE)
+        if filename:
+            self.sig_open_source.emit(str(filename), int(line or 1))
 
     def _update_replay_enabled(self) -> None:
         self._replay_history.setEnabled(
