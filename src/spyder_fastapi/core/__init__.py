@@ -1,6 +1,11 @@
 """FastAPI inspection core; intentionally independent from Spyder and Qt."""
 
-from .diagram import global_projection, impact_projection, route_projection
+from .diagram import (
+    global_projection,
+    impact_projection,
+    overlay_runtime_lineage,
+    route_projection,
+)
 from .diff import diff_maps
 from .discovery import discover_targets
 from .inspector import inspect_app
@@ -34,6 +39,7 @@ __all__ = [
     "load_snapshot",
     "load_snapshot_text",
     "NativeTelemetryStore",
+    "overlay_runtime_lineage",
     "local_debug_server_address",
     "record_route_execution",
     "route_projection",
