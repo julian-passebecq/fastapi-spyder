@@ -14,6 +14,14 @@ NodeKind = Literal[
     "dependency",
     "handler",
 ]
+DiagramNodeKind = Literal[
+    "route",
+    "parameter",
+    "model",
+    "dependency",
+    "handler",
+    "test",
+]
 
 
 class SourceRef(BaseModel):
@@ -218,11 +226,30 @@ class RequestExecution(BaseModel):
     elapsed_ms: float | None = None
     error: str | None = None
 
+class TestReference(BaseModel):
+    """Statically observed HTTP call from a project test to a FastAPI route."""
+
+    id: str
+    route_id: str
+    test_name: str
+    method: str
+    requested_path: str
+    match_kind: Literal["exact", "template"]
+    source: SourceRef
+
+
+class RouteTestIndex(BaseModel):
+    """Project-local static route-to-test links."""
+
+    references: list[TestReference] = Field(default_factory=list)
+    scanned_files: int = 0
+
+
 class DiagramNode(BaseModel):
     """Presentation-neutral node used by FastAPI architecture diagrams."""
 
     id: str
-    kind: NodeKind
+    kind: DiagramNodeKind
     label: str
     source: SourceRef | None = None
     route_id: str | None = None
