@@ -55,11 +55,13 @@ jobs:
           from tempfile import TemporaryDirectory
 
           from fastapi import Depends, FastAPI, File, Form, Header, UploadFile
+          from fastapi.testclient import TestClient
           from qtpy.QtWidgets import QApplication
           from spyder.plugins.ipythonconsole.plugin import IPythonConsole
 
           from spyder_fastapi.core import inspect_app
           from spyder_fastapi.models import RequestExecution
+          from spyder_fastapi.telemetry_capture import configure_native_telemetry
           from spyder_fastapi.spyder.plugin import FastAPIStudioPlugin
           from spyder_fastapi.spyder.widget import FastAPIStudioWidget
 
@@ -107,6 +109,44 @@ jobs:
           widget = FastAPIStudioWidget("fastapi_studio", None)
           widget.set_working_directory(project_root)
           widget.set_api_map(inspect_app(before))
+
+          native_path = project_root / "native-telemetry.jsonl"
+          capture = configure_native_telemetry(native_path)
+          assert capture["event"] == "capture_configured"
+          assert capture["tracing"] is True
+          assert capture["logs"] is True
+
+          native_client = TestClient(before)
+          assert native_client.get(
+              "/health",
+              headers={"token": "native-smoke"},
+          ).status_code == 200
+          assert native_client.get("/health").status_code == 422
+
+          widget._native_telemetry_path = native_path
+          widget._native_telemetry_offset = 0
+          widget._native_telemetry_partial = b""
+          widget._poll_native_telemetry()
+
+          assert widget._native_telemetry.total_requests() == 2
+          assert any(
+              span.name == "fastapi.dependencies"
+              for span in widget._native_telemetry.spans
+          )
+          assert any(
+              span.name == "fastapi.endpoint"
+              for span in widget._native_telemetry.spans
+          )
+          assert any(
+              span.name == "fastapi.serialization"
+              for span in widget._native_telemetry.spans
+          )
+          assert any(
+              log.event_name == "fastapi.validation.failed"
+              for log in widget._native_telemetry.logs
+          )
+          assert widget._telemetry._routes.topLevelItemCount() == 1
+          assert "LIVE" in widget._telemetry._status.text()
 
           assert FastAPIStudioPlugin.NAME == "fastapi_studio"
           assert "method" in signature(IPythonConsole.run_script).parameters
