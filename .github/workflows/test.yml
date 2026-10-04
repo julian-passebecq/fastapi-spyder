@@ -71,7 +71,7 @@ jobs:
         run: python -m pip check
 
       - name: Spyder version
-        run: spyder --version
+        run: python -c "from importlib.metadata import version; print(version('spyder'))"
 
       - name: Compile
         run: python -m compileall -q src tests examples/data_platform_demo
