@@ -225,6 +225,9 @@ assert exception_item is not None
 assert widget._telemetry._logs.columnCount() == 6
 assert exception_item.text(4).endswith("fail_route")
 assert str(exception_item.data(0, 42)).endswith("fail_route")
+widget._tabs.setCurrentWidget(widget._telemetry)
+widget._telemetry._tabs.setCurrentIndex(2)
+capture_widget("telemetry-exception-log")
 opened_exception_sources = []
 widget.sig_open_source.connect(
     lambda filename, line: opened_exception_sources.append((filename, line))
