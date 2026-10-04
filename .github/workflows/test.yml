@@ -140,6 +140,15 @@ jobs:
           assert widget._request_lab._cancel_debug_wait.isEnabled()
           assert debug_launches[0][0] == "service.main:app"
           assert debug_launches[0][2:] == ("127.0.0.1", 8000)
+          debug_stops = []
+          widget._request_lab.sig_stop_debug_server.connect(
+              lambda: debug_stops.append(True)
+          )
+          widget.set_debug_server_running(True)
+          assert widget._request_lab._stop_debug_server.isEnabled()
+          widget._request_lab._stop_debug_server.click()
+          assert debug_stops
+          widget.set_debug_server_running(False)
 
           widget._request_lab._render_result(
               RequestExecution(
