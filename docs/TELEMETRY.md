@@ -95,16 +95,51 @@ replaced or the plugin shuts down.
 The first native dashboard contains:
 
 - request count;
-- error count / error rate;
+- 5xx/native-error count and error rate;
+- validation-failure count;
+- unhandled-exception count;
 - average latency;
 - P50 / P95 latency;
-- per-route request/error/latency table;
+- per-route request/error/validation/latency table;
 - recent request latency timeline;
-- trace tree / waterfall structure;
-- FastAPI validation and exception log list.
+- trace tree plus graphical relative-time waterfall;
+- FastAPI validation and exception log list;
+- operation-span navigation back to Python source when `code.function.name`
+  maps unambiguously to the inspected FastAPI app.
 
 The route KPIs are calculated from finished FastAPI HTTP server spans. They are
 not presented as Prometheus or Grafana metrics.
+
+## Error semantics
+
+The dashboard deliberately keeps different FastAPI failure signals separate.
+
+- **Server errors** are 5xx/error server spans and drive the error-rate KPI.
+- **Validation failures** come from FastAPI's native
+  `fastapi.validation.failed` warning logs and do not inflate the server error
+  rate.
+- **Unhandled exceptions** come from FastAPI's native exception log events.
+
+This avoids labeling normal contract rejection (for example HTTP 422) as an
+internal server failure.
+
+## Trace waterfall
+
+The trace view has two synchronized representations:
+
+```text
+tree                         relative-time waterfall
+
+GET /orders                  |=======================|
+  fastapi.dependencies         |====|
+  fastapi.endpoint                  |==============|
+  fastapi.serialization                            |=|
+```
+
+The bars use the span timestamps emitted by OpenTelemetry. They are not
+reconstructed from log order. Background-task and third-party child spans can
+therefore extend beyond the FastAPI HTTP response span when the runtime trace
+actually does so.
 
 ## Latency semantics
 
