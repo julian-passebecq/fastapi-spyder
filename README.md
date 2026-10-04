@@ -134,7 +134,8 @@ Remaining before calling V0.1 complete:
 
 Implemented:
 
-- in-memory API baseline snapshots
+- in-memory and persistent versioned API baseline snapshots
+- save current snapshot / load baseline from the Spyder Changes pane
 - semantic route/model/dependency diff
 - affected-route blast radius for schema and dependency changes
 - conservative compatibility-risk candidates
@@ -142,7 +143,6 @@ Implemented:
 
 Next:
 
-- persistent snapshot export/import
 - 422 validation visualizer
 - request builder
 
