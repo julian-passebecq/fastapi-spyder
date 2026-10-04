@@ -156,9 +156,15 @@ Also implemented:
 - isolated non-blocking request runner
 - 422 validation visualizer linked to model/dependency source
 
+Implemented:
+
+- application/x-www-form-urlencoded form editor and sender
+- multipart/form-data editor and sender
+- single and multiple UploadFile fields with local file selection
+
 Next:
 
-- multipart/form support
+- richer non-JSON body types beyond forms/uploads
 
 ### V0.3 - Debug requests
 
