@@ -414,6 +414,11 @@ def _parameter_source_and_type(
     route = _route(api_map, route_id)
 
     if location == "body":
+        template = build_request_template(api_map, route_id)
+        for field in template.body_fields:
+            if name in {field.name, field.python_name or field.name}:
+                return field.source or route.source, field.type_name
+
         model_name = route.request_models[0] if route.request_models else None
         model = next(
             (item for item in api_map.models if item.name == model_name),
