@@ -1,7 +1,8 @@
 """Cross-platform headless qualification for the Spyder FastAPI Studio widget."""
 
+import platform
 import sys
-from importlib.metadata import entry_points
+from importlib.metadata import entry_points, version
 from importlib.util import module_from_spec, spec_from_file_location
 from inspect import signature
 from pathlib import Path
@@ -46,6 +47,15 @@ def health_after(_token: str = Depends(auth)):
 @after.get("/ready")
 def ready():
     return {"ready": True}
+
+print(
+    "QUALIFICATION",
+    f"os={platform.platform()}",
+    f"python={platform.python_version()}",
+    f"spyder={version('spyder')}",
+    f"fastapi={version('fastapi')}",
+    f"fastapi-spyder={version('fastapi-spyder')}",
+)
 
 plugin_entries = {
     entry.name: entry.value
