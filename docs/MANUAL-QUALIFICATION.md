@@ -50,7 +50,20 @@ those seven checks fails or when the Windows CI job is not green.
 
 ## Install
 
-From the repository root:
+Preferred Windows path:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\qualify-windows.ps1
+```
+
+The launcher creates an isolated Python 3.12 qualification environment when
+needed, installs the Spyder/dev extras, runs `pip check`, verifies Spyder's
+external-plugin discovery, runs the realistic demo tests, writes
+`qualification-local/windows-manual.md` with the exact Git SHA and seven
+human-only verdicts, then opens Spyder directly in
+`examples/data_platform_demo`.
+
+The equivalent manual setup from the repository root is:
 
 ```powershell
 py -3.12 -m venv .venv
