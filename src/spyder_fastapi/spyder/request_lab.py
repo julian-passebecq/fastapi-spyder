@@ -38,6 +38,7 @@ from spyder_fastapi.models import (
 _ROLE_SOURCE_FILE = Qt.UserRole + 1
 _ROLE_SOURCE_LINE = Qt.UserRole + 2
 _ROLE_REQUIRED = Qt.UserRole + 3
+_ROLE_HISTORY_INDEX = Qt.UserRole + 4
 
 
 def _source_text(source: SourceRef | None) -> str:
@@ -73,6 +74,9 @@ class RequestLabWidget(QWidget):
         self._stdout_chunks: list[str] = []
         self._stderr_chunks: list[str] = []
         self._pending_payload: bytes | None = None
+        self._active_command: dict | None = None
+        self._active_route_id: str | None = None
+        self._history: list[dict] = []
 
         self._build_ui()
 
@@ -182,6 +186,41 @@ class RequestLabWidget(QWidget):
         self._validation.itemDoubleClicked.connect(self._open_validation_source)
         validation_layout.addWidget(self._validation, 1)
         self._result_tabs.addTab(validation_page, "422 Validation")
+
+        history_page = QWidget()
+        history_layout = QVBoxLayout(history_page)
+        history_layout.setContentsMargins(0, 0, 0, 0)
+
+        history_actions = QHBoxLayout()
+        self._replay_history = QPushButton("Replay selected")
+        self._replay_history.setEnabled(False)
+        self._replay_history.clicked.connect(self._replay_selected_history)
+        history_actions.addWidget(self._replay_history)
+
+        self._clear_history_button = QPushButton("Clear history")
+        self._clear_history_button.setEnabled(False)
+        self._clear_history_button.clicked.connect(self._clear_history)
+        history_actions.addWidget(self._clear_history_button)
+        history_actions.addStretch(1)
+        history_layout.addLayout(history_actions)
+
+        history_splitter = QSplitter(Qt.Horizontal)
+        self._history_tree = QTreeWidget()
+        self._history_tree.setHeaderLabels(
+            ["#", "Status", "Route", "Elapsed", "URL"]
+        )
+        self._history_tree.setRootIsDecorated(False)
+        self._history_tree.currentItemChanged.connect(self._history_selected)
+        history_splitter.addWidget(self._history_tree)
+
+        self._history_details = QPlainTextEdit()
+        self._history_details.setReadOnly(True)
+        history_splitter.addWidget(self._history_details)
+        history_splitter.setStretchFactor(0, 2)
+        history_splitter.setStretchFactor(1, 3)
+        history_layout.addWidget(history_splitter, 1)
+
+        self._result_tabs.addTab(history_page, "History")
 
         root.addWidget(self._result_tabs, 2)
 
