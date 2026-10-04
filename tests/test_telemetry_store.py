@@ -144,6 +144,8 @@ def test_native_telemetry_store_accepts_fastapi_logs_and_controls():
     )
 
     assert store.logs_for_trace(trace_id)[0].event_name == "fastapi.validation.failed"
+    assert store.validation_failure_count() == 1
+    assert store.exception_count() == 0
     assert store.latest_control().fastapi_version == "0.142.2"
 
 
@@ -170,3 +172,42 @@ def test_native_telemetry_store_is_bounded():
 
     assert len(store.spans) == 2
     assert [span.attributes["http.route"] for span in store.spans] == ["/1", "/2"]
+
+def test_validation_failures_are_not_counted_as_server_errors():
+    store = NativeTelemetryStore()
+    trace_id = "b" * 32
+
+    store.ingest(
+        _server_span(
+            trace_id=trace_id,
+            span_id="3" * 16,
+            route="/items",
+            method="POST",
+            duration_ms=7,
+            status_code=422,
+        )
+    )
+    store.ingest(
+        {
+            "signal": "log",
+            "timestamp_ns": 100,
+            "trace_id": trace_id,
+            "span_id": "3" * 16,
+            "severity": "WARN",
+            "event_name": "fastapi.validation.failed",
+            "body": "Request validation failed",
+            "attributes": {
+                "http.route": "/items",
+                "fastapi.validation.error_count": 1,
+            },
+            "scope_name": "fastapi",
+        }
+    )
+
+    summary = store.route_summaries()[0]
+    assert summary.route_id == "POST /items"
+    assert summary.error_count == 0
+    assert summary.error_rate == 0
+    assert summary.validation_failure_count == 1
+    assert store.validation_failure_count() == 1
+
