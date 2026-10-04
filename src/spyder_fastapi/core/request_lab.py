@@ -271,7 +271,12 @@ def _parameter_source_and_type(
                 field_schema = properties.get(name)
                 if isinstance(field_schema, dict):
                     expected_type = field_schema.get("type") or field_schema.get("$ref")
-        return (model.source if model is not None else route.source, expected_type)
+        if model is not None:
+            return (
+                model.field_sources.get(name) or model.source,
+                expected_type,
+            )
+        return route.source, expected_type
 
     for parameter in route.parameters:
         if parameter.location == location and parameter.name == name:
