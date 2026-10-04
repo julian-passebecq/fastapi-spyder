@@ -136,7 +136,12 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
             return
 
         launcher = Path(__file__).resolve().parents[1] / "debug_server.py"
-        args = f"{target} --host {host} --port {int(port)}"
+        telemetry_file = widget.prepare_native_telemetry_capture()
+        escaped_telemetry_file = telemetry_file.replace('"', '\\"')
+        args = (
+            f"{target} --host {host} --port {int(port)} "
+            f'--telemetry-file "{escaped_telemetry_file}"'
+        )
 
         try:
             ipython_console.run_script(
@@ -156,9 +161,9 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
         widget.set_debug_server_running(True)
         widget.set_status_message(
             f"Debug launch sent to Spyder for {target} on "
-            f"http://{host}:{port}. Continue the debugger if it stops in the "
-            "launcher; Request Lab will replay automatically when the server "
-            "starts listening."
+            f"http://{host}:{port}. Native FastAPI telemetry capture is attached. "
+            "Continue the debugger if it stops in the launcher; Request Lab will "
+            "replay automatically when the server starts listening."
         )
 
     def _stop_debug_server(self) -> None:
