@@ -29,12 +29,19 @@ from spyder.api.widgets.main_widget import PluginMainWidget
 
 from spyder_fastapi.core import (
     diff_maps,
+    discover_route_tests,
     discover_targets,
     impacted_routes,
     load_snapshot,
     save_snapshot,
+    tests_for_route,
 )
-from spyder_fastapi.models import APIDiff, FastAPIMap, SourceRef
+from spyder_fastapi.models import (
+    APIDiff,
+    FastAPIMap,
+    RouteTestIndex,
+    SourceRef,
+)
 from spyder_fastapi.spyder.diagram import FastAPIDiagramWidget
 from spyder_fastapi.spyder.request_lab import RequestLabWidget
 
@@ -72,6 +79,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._baseline_target: str | None = None
         self._loaded_target: str | None = None
         self._current_diff: APIDiff | None = None
+        self._test_index = RouteTestIndex()
         self._workdir = os.getcwd()
         self._python_executable = sys.executable
         self._process: QProcess | None = None
@@ -194,7 +202,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._tabs.addTab(changes_page, "Changes")
 
         self._routes_tree = QTreeWidget()
-        self._routes_tree.setHeaderLabels(["Method", "Path"])
+        self._routes_tree.setHeaderLabels(["Method", "Path / handler", "Tests"])
         self._routes_tree.setRootIsDecorated(True)
         self._routes_tree.currentItemChanged.connect(self._route_selected)
         self._routes_tree.itemDoubleClicked.connect(self._open_tree_item_source)
@@ -256,6 +264,26 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._diagram = FastAPIDiagramWidget()
         self._diagram.sig_open_source.connect(self.sig_open_source.emit)
         self._tabs.addTab(self._diagram, "Diagram")
+
+        tests_page = QWidget()
+        tests_layout = QVBoxLayout(tests_page)
+
+        tests_controls = QHBoxLayout()
+        self._tests_summary = QLabel("No route-to-test scan yet.")
+        self._tests_summary.setWordWrap(True)
+        tests_controls.addWidget(self._tests_summary, 1)
+        self._refresh_tests_button = QPushButton("Refresh tests")
+        self._refresh_tests_button.clicked.connect(self.refresh_test_links)
+        tests_controls.addWidget(self._refresh_tests_button)
+        tests_layout.addLayout(tests_controls)
+
+        self._tests_tree = QTreeWidget()
+        self._tests_tree.setHeaderLabels(["Route", "Test", "Match", "Source"])
+        self._tests_tree.setRootIsDecorated(False)
+        self._tests_tree.currentItemChanged.connect(self._test_selected)
+        self._tests_tree.itemDoubleClicked.connect(self._open_tree_item_source)
+        tests_layout.addWidget(self._tests_tree, 1)
+        self._tabs.addTab(tests_page, "Tests")
 
         lineage_page = QWidget()
         lineage_layout = QVBoxLayout(lineage_page)
@@ -512,6 +540,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._api_map = api_map
         self._baseline_button.setEnabled(True)
         self._save_snapshot_button.setEnabled(True)
+        self._scan_test_links()
         self._populate_overview()
         self._populate_changes()
         self._populate_routes()
@@ -519,6 +548,8 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._populate_dependencies()
         self._populate_lineage_routes()
         self._diagram.set_api_map(api_map)
+        self._diagram.set_test_index(self._test_index)
+        self._populate_test_links()
         self._request_lab.set_api_map(api_map)
         self._request_lab.set_app_target(
             self._loaded_target
@@ -541,7 +572,8 @@ class FastAPIStudioWidget(PluginMainWidget):
             f"Loaded {api_map.title}: "
             f"{len(api_map.routes)} routes, "
             f"{len(api_map.models)} models, "
-            f"{len(api_map.dependencies)} dependencies."
+            f"{len(api_map.dependencies)} dependencies, "
+            f"{len(self._test_index.references)} linked test call(s)."
         )
 
     def _snapshot_key(self) -> str:
@@ -778,10 +810,22 @@ class FastAPIStudioWidget(PluginMainWidget):
             self._routes_tree.addTopLevelItem(path_item)
 
             for route in sorted(by_path[path], key=lambda candidate: candidate.method):
-                item = QTreeWidgetItem([route.method, _short_name(route.handler)])
+                route_tests = tests_for_route(self._test_index, route.id)
+                item = QTreeWidgetItem(
+                    [
+                        route.method,
+                        _short_name(route.handler),
+                        str(len(route_tests)),
+                    ]
+                )
                 item.setData(0, _ROLE_ID, route.id)
                 self._set_item_source(item, route.source)
                 item.setToolTip(1, route.handler)
+                if route_tests:
+                    item.setToolTip(
+                        2,
+                        "\n".join(test.test_name for test in route_tests),
+                    )
                 path_item.addChild(item)
                 if first_route_item is None:
                     first_route_item = item
@@ -790,6 +834,7 @@ class FastAPIStudioWidget(PluginMainWidget):
 
         self._routes_tree.resizeColumnToContents(0)
         self._routes_tree.resizeColumnToContents(1)
+        self._routes_tree.resizeColumnToContents(2)
         if first_route_item is not None:
             self._routes_tree.setCurrentItem(first_route_item)
 
@@ -830,6 +875,14 @@ class FastAPIStudioWidget(PluginMainWidget):
         ) or "  -"
 
         deps = "\n".join(f"  {_short_name(name)}" for name in dependency_names) or "  -"
+        route_tests = tests_for_route(self._test_index, route.id)
+        tests_text = (
+            "\n".join(
+                f"  {test.test_name} [{test.match_kind}]"
+                for test in route_tests
+            )
+            or "  -"
+        )
 
         self._route_details.setPlainText(
             f"{route.id}\n\n"
@@ -840,6 +893,7 @@ class FastAPIStudioWidget(PluginMainWidget):
             f"Parameters\n{params}\n\n"
             f"Request models\n  {', '.join(route.request_models) or '-'}\n\n"
             f"Dependencies\n{deps}\n\n"
+            f"Tests\n{tests_text}\n\n"
             f"Response model\n  {route.response_model or '-'}"
         )
 
@@ -1039,7 +1093,11 @@ class FastAPIStudioWidget(PluginMainWidget):
 
             path_item.setHidden(bool(needle) and not (path_matches or visible_children))
 
-        for tree in (self._models_tree, self._dependencies_tree):
+        for tree in (
+            self._models_tree,
+            self._dependencies_tree,
+            self._tests_tree,
+        ):
             for index in range(tree.topLevelItemCount()):
                 item = tree.topLevelItem(index)
                 haystack = " ".join(
@@ -1047,6 +1105,75 @@ class FastAPIStudioWidget(PluginMainWidget):
                     for column in range(item.columnCount())
                 ).casefold()
                 item.setHidden(bool(needle) and needle not in haystack)
+
+    # --- Route-to-test links
+    # ------------------------------------------------------------------
+    def _scan_test_links(self) -> None:
+        if self._api_map is None:
+            self._test_index = RouteTestIndex()
+            return
+
+        self._test_index = discover_route_tests(
+            self._workdir,
+            self._api_map,
+        )
+
+    def refresh_test_links(self) -> None:
+        if self._api_map is None:
+            self._status.setText("Inspect a FastAPI application before scanning tests.")
+            return
+
+        self._status.setText("Scanning project tests for FastAPI route calls...")
+        self._scan_test_links()
+        self._populate_test_links()
+        self._populate_routes()
+        self._diagram.set_test_index(self._test_index)
+        self._status.setText(
+            f"Linked {len(self._test_index.references)} test call(s) "
+            f"from {self._test_index.scanned_files} test file(s)."
+        )
+
+    def _populate_test_links(self) -> None:
+        self._tests_tree.clear()
+
+        linked_routes = {
+            reference.route_id
+            for reference in self._test_index.references
+        }
+        self._tests_summary.setText(
+            f"{len(self._test_index.references)} linked HTTP test call(s) / "
+            f"{len(linked_routes)} route(s) / "
+            f"{self._test_index.scanned_files} scanned test file(s). "
+            "Links are static evidence from literal or f-string client calls."
+        )
+
+        for reference in self._test_index.references:
+            source = reference.source
+            source_text = _source_text(source)
+            item = QTreeWidgetItem(
+                [
+                    reference.route_id,
+                    reference.test_name,
+                    reference.match_kind,
+                    source_text,
+                ]
+            )
+            item.setData(0, _ROLE_ID, reference.route_id)
+            self._set_item_source(item, source)
+            item.setToolTip(0, reference.requested_path)
+            self._tests_tree.addTopLevelItem(item)
+
+        for column in range(self._tests_tree.columnCount()):
+            self._tests_tree.resizeColumnToContents(column)
+
+    def _test_selected(self, item: QTreeWidgetItem | None, _previous) -> None:
+        if item is None:
+            return
+        route_id = item.data(0, _ROLE_ID)
+        if not route_id:
+            return
+        self._diagram.select_route(str(route_id))
+        self._diagram.set_show_tests(True)
 
     # --- Source navigation
     # ------------------------------------------------------------------
