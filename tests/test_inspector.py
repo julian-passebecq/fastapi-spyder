@@ -44,6 +44,8 @@ def test_inspection_extracts_contract_source_and_lineage():
     assert route.request_models == ["ItemIn"]
     assert route.response_model == "ItemOut"
     assert route.source.line is not None
+    assert route.source.execution_line is not None
+    assert route.source.execution_line > route.source.line
 
     locations = {(param.location, param.name) for param in route.parameters}
     assert ("path", "item_id") in locations
@@ -62,6 +64,7 @@ def test_inspection_extracts_contract_source_and_lineage():
         (parameter.location, parameter.name, parameter.required)
         for parameter in auth_dependency.parameters
     ] == [("header", "authorization", True)]
+    assert auth_dependency.source.execution_line is not None
 
     edge_relations = {edge.relation for edge in result.lineage.edges}
     assert {"accepts", "validates_as", "depends_on", "handled_by", "returns"} <= edge_relations
