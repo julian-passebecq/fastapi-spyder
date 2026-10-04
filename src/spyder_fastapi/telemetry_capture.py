@@ -340,33 +340,37 @@ def configure_native_telemetry(
         _SINK.write(payload)
         return payload
 
+    trace_mode = "disabled"
+    log_mode = "disabled"
+
     try:
         tracing, trace_mode = _install_trace_capture()
+    except ImportError as exc:
+        tracing = False
+        trace_mode = f"SDK unavailable: {exc}"
+    except Exception as exc:
+        tracing = False
+        trace_mode = f"{type(exc).__name__}: {exc}"
+
+    try:
         logs, log_mode = _install_log_capture()
     except ImportError as exc:
-        payload = {
-            "signal": "control",
-            "schema_version": _SCHEMA_VERSION,
-            "event": "capture_unavailable",
-            "message": (
-                "Native telemetry requires opentelemetry-sdk in the selected "
-                f"Spyder Python environment: {exc}"
-            ),
-            "fastapi_version": fastapi_version,
-            "tracing": False,
-            "logs": False,
-        }
-        _SINK.write(payload)
-        return payload
+        logs = False
+        log_mode = f"SDK unavailable: {exc}"
+    except Exception as exc:
+        logs = False
+        log_mode = f"{type(exc).__name__}: {exc}"
 
+    event = "capture_configured" if tracing or logs else "capture_unavailable"
     message = (
-        f"FastAPI native telemetry capture ready "
+        f"FastAPI native telemetry capture "
+        f"{'ready' if event == 'capture_configured' else 'unavailable'} "
         f"(traces: {trace_mode}; logs: {log_mode})."
     )
     payload = {
         "signal": "control",
         "schema_version": _SCHEMA_VERSION,
-        "event": "capture_configured",
+        "event": event,
         "message": message,
         "fastapi_version": fastapi_version,
         "tracing": tracing,
