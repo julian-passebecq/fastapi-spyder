@@ -291,6 +291,9 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._telemetry.sig_route_selected.connect(
             self._telemetry_route_selected
         )
+        self._telemetry.sig_function_selected.connect(
+            self._telemetry_function_selected
+        )
         self._tabs.addTab(self._telemetry, "Telemetry")
 
         tests_page = QWidget()
@@ -1263,6 +1266,52 @@ class FastAPIStudioWidget(PluginMainWidget):
         diagram_index = self._tabs.indexOf(self._diagram)
         if diagram_index >= 0:
             self._tabs.setCurrentIndex(diagram_index)
+
+    def _telemetry_function_selected(self, function_name: str) -> None:
+        """Open source for an observed FastAPI operation when resolvable."""
+
+        api_map = self._api_map
+        if api_map is None:
+            return
+
+        candidates: list[SourceRef] = []
+        for route in api_map.routes:
+            if route.handler == function_name:
+                candidates.append(route.source)
+        for dependency in api_map.dependencies:
+            if dependency.name == function_name:
+                candidates.append(dependency.source)
+
+        if not candidates:
+            suffix_matches: list[SourceRef] = []
+            short_name = function_name.rsplit(".", 1)[-1]
+            for route in api_map.routes:
+                if route.handler.rsplit(".", 1)[-1] == short_name:
+                    suffix_matches.append(route.source)
+            for dependency in api_map.dependencies:
+                if dependency.name.rsplit(".", 1)[-1] == short_name:
+                    suffix_matches.append(dependency.source)
+            if len(suffix_matches) == 1:
+                candidates = suffix_matches
+
+        source = next(
+            (
+                candidate
+                for candidate in candidates
+                if candidate.file
+            ),
+            None,
+        )
+        if source is None:
+            self._status.setText(
+                f"No unique source mapping for telemetry function {function_name}."
+            )
+            return
+
+        self.sig_open_source.emit(
+            source.file,
+            int(source.execution_line or source.line or 1),
+        )
 
     # --- Runtime evidence
     # ------------------------------------------------------------------
