@@ -463,14 +463,25 @@ class RequestLabWidget(QWidget):
             self.sig_status.emit(str(exc))
             return
 
+        route_id = self._template.route_id if self._template is not None else None
+        self._start_request(command, route_id)
+
+    def _start_request(self, command: dict, route_id: str | None) -> None:
+        if self._process is not None:
+            self.sig_status.emit("A Request Lab request is already running.")
+            return
+
         self._stdout_chunks = []
         self._stderr_chunks = []
+        self._active_command = json.loads(json.dumps(command))
+        self._active_route_id = route_id
         self._pending_payload = json.dumps(command).encode("utf-8")
         self._response.clear()
         self._validation.clear()
         self._response_summary.setText("Sending request...")
         self._validation_summary.setText("Waiting for response...")
         self._send.setEnabled(False)
+        self._replay_history.setEnabled(False)
 
         process = QProcess(self)
         process.setWorkingDirectory(self._workdir)
