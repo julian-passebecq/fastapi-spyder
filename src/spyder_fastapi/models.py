@@ -171,7 +171,6 @@ class SnapshotEnvelope(BaseModel):
 
     format_version: int = 1
     target: str | None = None
-    trace_id: str | None = None
     api: FastAPIMap
 
 
