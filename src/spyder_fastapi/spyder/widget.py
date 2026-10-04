@@ -811,11 +811,15 @@ class FastAPIStudioWidget(PluginMainWidget):
 
             for route in sorted(by_path[path], key=lambda candidate: candidate.method):
                 route_tests = tests_for_route(self._test_index, route.id)
+                unique_tests = {
+                    (test.source.file, test.test_name)
+                    for test in route_tests
+                }
                 item = QTreeWidgetItem(
                     [
                         route.method,
                         _short_name(route.handler),
-                        str(len(route_tests)),
+                        str(len(unique_tests)),
                     ]
                 )
                 item.setData(0, _ROLE_ID, route.id)
@@ -876,13 +880,14 @@ class FastAPIStudioWidget(PluginMainWidget):
 
         deps = "\n".join(f"  {_short_name(name)}" for name in dependency_names) or "  -"
         route_tests = tests_for_route(self._test_index, route.id)
-        tests_text = (
-            "\n".join(
-                f"  {test.test_name} [{test.match_kind}]"
-                for test in route_tests
+        unique_route_tests: dict[tuple[str | None, str], str] = {}
+        for test in route_tests:
+            key = (test.source.file, test.test_name)
+            unique_route_tests.setdefault(
+                key,
+                f"  {test.test_name} [{test.match_kind}]",
             )
-            or "  -"
-        )
+        tests_text = "\n".join(unique_route_tests.values()) or "  -"
 
         self._route_details.setPlainText(
             f"{route.id}\n\n"
