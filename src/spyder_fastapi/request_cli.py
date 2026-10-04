@@ -81,21 +81,33 @@ def _multipart_body(
         add_line()
         add_line(str(value))
 
-    for name, raw_path in files.items():
-        path = Path(str(raw_path)).expanduser()
-        if not path.is_file():
-            raise ValueError(f"Upload file does not exist: {path}")
+    for name, raw_paths in files.items():
+        if isinstance(raw_paths, (list, tuple)):
+            upload_paths = list(raw_paths)
+        else:
+            upload_paths = [raw_paths]
 
-        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        add_line(f"--{boundary}")
-        add_line(
-            f'Content-Disposition: form-data; name="{str(name)}"; '
-            f'filename="{path.name}"'
-        )
-        add_line(f"Content-Type: {content_type}")
-        add_line()
-        chunks.append(path.read_bytes())
-        chunks.append(b"\r\n")
+        for raw_path in upload_paths:
+            path = Path(str(raw_path)).expanduser()
+            if not path.is_file():
+                raise ValueError(f"Upload file does not exist: {path}")
+
+            content_type = (
+                mimetypes.guess_type(path.name)[0]
+                or "application/octet-stream"
+            )
+            safe_name = path.name.replace('"', "_").replace("\r", "_").replace("\n", "_")
+            safe_field = str(name).replace('"', "_").replace("\r", "_").replace("\n", "_")
+
+            add_line(f"--{boundary}")
+            add_line(
+                f'Content-Disposition: form-data; name="{safe_field}"; '
+                f'filename="{safe_name}"'
+            )
+            add_line(f"Content-Type: {content_type}")
+            add_line()
+            chunks.append(path.read_bytes())
+            chunks.append(b"\r\n")
 
     add_line(f"--{boundary}--")
     return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
