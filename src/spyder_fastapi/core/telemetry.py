@@ -60,6 +60,119 @@ def _is_server_span(span: NativeTelemetrySpan) -> bool:
     return span.kind.upper() == "SERVER" and _route_id(span) is not None
 
 
+def span_category(span: NativeTelemetrySpan) -> str:
+    """Classify an observed span from OpenTelemetry semantic attributes."""
+
+    attributes = span.attributes
+    kind = span.kind.upper()
+
+    if kind == "SERVER" and (
+        "http.route" in attributes
+        or "http.request.method" in attributes
+        or "http.method" in attributes
+    ):
+        return "http-server"
+
+    if span.scope_name == "fastapi" or span.name.startswith("fastapi."):
+        return "fastapi"
+
+    if (
+        "db.system.name" in attributes
+        or "db.system" in attributes
+        or "db.namespace" in attributes
+    ):
+        return "database"
+
+    if (
+        "messaging.system" in attributes
+        or "messaging.operation.type" in attributes
+        or "messaging.destination.name" in attributes
+    ):
+        return "messaging"
+
+    if "rpc.system" in attributes:
+        return "rpc"
+
+    if kind == "CLIENT" and (
+        "http.request.method" in attributes
+        or "http.method" in attributes
+        or "url.full" in attributes
+        or "http.url" in attributes
+    ):
+        return "http-client"
+
+    if kind in {"CLIENT", "PRODUCER"}:
+        return "external"
+
+    return "application"
+
+
+def span_target(span: NativeTelemetrySpan) -> str | None:
+    """Return a compact remote/DB target when semantic attributes expose one."""
+
+    attributes = span.attributes
+    category = span_category(span)
+
+    if category == "database":
+        system = (
+            attributes.get("db.system.name")
+            or attributes.get("db.system")
+            or "database"
+        )
+        namespace = (
+            attributes.get("db.namespace")
+            or attributes.get("db.name")
+        )
+        return (
+            f"{system}:{namespace}"
+            if namespace
+            else str(system)
+        )
+
+    if category == "http-client":
+        target = (
+            attributes.get("server.address")
+            or attributes.get("net.peer.name")
+            or attributes.get("url.full")
+            or attributes.get("http.url")
+        )
+        return str(target) if target is not None else None
+
+    if category == "messaging":
+        target = (
+            attributes.get("messaging.destination.name")
+            or attributes.get("messaging.destination")
+            or attributes.get("messaging.system")
+        )
+        return str(target) if target is not None else None
+
+    if category == "rpc":
+        system = attributes.get("rpc.system")
+        service = attributes.get("rpc.service")
+        if system and service:
+            return f"{system}:{service}"
+        return str(service or system) if (service or system) else None
+
+    if category == "external":
+        target = (
+            attributes.get("server.address")
+            or attributes.get("net.peer.name")
+        )
+        return str(target) if target is not None else None
+
+    return None
+
+
+def is_external_span(span: NativeTelemetrySpan) -> bool:
+    return span_category(span) in {
+        "database",
+        "http-client",
+        "messaging",
+        "rpc",
+        "external",
+    }
+
+
 class NativeTelemetryStore:
     """Bounded in-memory store for native FastAPI telemetry.
 
@@ -198,6 +311,26 @@ class NativeTelemetryStore:
         total = self.total_requests()
         return self.error_count() / total if total else 0.0
 
+    def external_span_count(self) -> int:
+        return sum(1 for span in self.spans if is_external_span(span))
+
+    def external_span_categories(self) -> dict[str, int]:
+        counts: dict[str, int] = defaultdict(int)
+        for span in self.spans:
+            if is_external_span(span):
+                counts[span_category(span)] += 1
+        return dict(sorted(counts.items()))
+
+    def external_spans_for_trace(
+        self,
+        trace_id: str,
+    ) -> list[NativeTelemetrySpan]:
+        return [
+            span
+            for span in self.trace_spans(trace_id)
+            if is_external_span(span)
+        ]
+
     def validation_failure_count(self) -> int:
         return sum(
             1
@@ -273,4 +406,9 @@ class NativeTelemetryStore:
         ]
 
 
-__all__ = ["NativeTelemetryStore"]
+__all__ = [
+    "NativeTelemetryStore",
+    "is_external_span",
+    "span_category",
+    "span_target",
+]
