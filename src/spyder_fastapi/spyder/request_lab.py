@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from qtpy.QtCore import QProcess, QProcessEnvironment, QTimer, Qt, Signal
-from qtpy.QtNetwork import QAbstractSocket, QTcpSocket
+from qtpy.QtNetwork import QTcpSocket
 from qtpy.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -663,8 +663,7 @@ class RequestLabWidget(QWidget):
             self._debug_probe_timer.stop()
             return
 
-        if self._debug_probe.state() != QAbstractSocket.UnconnectedState:
-            self._debug_probe.abort()
+        self._debug_probe.abort()
 
         self._debug_probe_attempts += 1
         if self._debug_probe_attempts > 120:
