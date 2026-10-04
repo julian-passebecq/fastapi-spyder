@@ -88,7 +88,7 @@ The distinction remains explicit:
 
 - route/model/dependency edges = deterministic FastAPI structure;
 - tested_by edges = static project evidence;
-- future SQL/HTTP/storage timing edges = observed runtime evidence.
+- observed_* downstream edges = OpenTelemetry runtime evidence.
 
 ## Observed Request Lab timing
 
@@ -107,26 +107,53 @@ handler latency.
 
 The evidence is in-memory and can be cleared explicitly from the Diagram tab.
 
-## Runtime evolution
+## Observed downstream runtime lineage
 
-Future telemetry should enrich these same nodes instead of creating a separate
-runtime graph. A route flow can therefore evolve from:
+Native OpenTelemetry spans can now enrich the same Diagram instead of creating a
+second architecture model.
 
-```text
-route -> dependency -> handler -> response
-```
-
-to:
+Example:
 
 ```text
-route                         147 ms
-  -> auth dependency            8 ms
-  -> db dependency              4 ms
-  -> handler                  121 ms
-       -> SQL                  34 ms
-       -> external HTTP        71 ms
-  -> response validation        4 ms
+POST /ingestions
+  |
+  +-- Depends(get_tenant_context)
+  |
+  +-- handled_by --> create_ingestion()
+  |                    |
+  |                    +-- observed database -->
+  |                    |      postgresql:demo_platform
+  |                    |
+  |                    +-- observed http client -->
+  |                           schema-registry.demo.internal
+  |
+  +-- observed messaging -->
+         ingestion.accepted
 ```
 
-Observed SQL/HTTP/storage edges must be explicitly marked as runtime evidence;
-they should never be inferred from static source text and presented as fact.
+Runtime nodes are visually distinct from deterministic nodes and carry:
+
+- observation count;
+- last duration;
+- average duration;
+- P95 duration;
+- OpenTelemetry category and target.
+
+Runtime edges are derived only from captured spans. The Studio never infers
+SQL/HTTP/messaging calls from source code and presents them as fact.
+
+### Runtime anchoring
+
+The overlay uses native FastAPI span parentage conservatively.
+
+- downstream child of `fastapi.endpoint` -> static handler when present;
+- downstream child of `fastapi.dependencies` -> matching static dependency
+  when the callable maps uniquely;
+- background-task/serialization child -> route;
+- unresolved downstream child -> handler or route fallback.
+
+The fallback is deliberate: a weaker but truthful route association is better
+than inventing a precise static relationship.
+
+The **Observed I/O** toggle removes these runtime nodes/edges while leaving the
+deterministic graph and static test evidence untouched.
