@@ -41,12 +41,37 @@ jobs:
       - name: Install with Spyder
         run: python -m pip install -e ".[dev,spyder]"
 
-      - name: Import plugin API
+      - name: Smoke test Spyder widget
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           python - <<'PY'
+          from fastapi import Depends, FastAPI, Header
+          from qtpy.QtWidgets import QApplication
+
+          from spyder_fastapi.core import inspect_app
           from spyder_fastapi.spyder.plugin import FastAPIStudioPlugin
           from spyder_fastapi.spyder.widget import FastAPIStudioWidget
-          print(FastAPIStudioPlugin.NAME, FastAPIStudioWidget.__name__)
+
+          app = FastAPI(title="Smoke API")
+
+          def auth(token: str = Header()):
+              return token
+
+          @app.get("/health")
+          def health(_token: str = Depends(auth)):
+              return {"ok": True}
+
+          qt_app = QApplication.instance() or QApplication([])
+          widget = FastAPIStudioWidget("fastapi_studio", None)
+          widget.set_api_map(inspect_app(app))
+
+          assert FastAPIStudioPlugin.NAME == "fastapi_studio"
+          assert widget._routes_tree.topLevelItemCount() == 1
+          assert widget._dependencies_tree.topLevelItemCount() == 1
+          assert widget._lineage_tree.topLevelItemCount() == 1
+
+          widget.close()
+          qt_app.processEvents()
+          print("FastAPI Studio widget smoke test passed")
           PY
