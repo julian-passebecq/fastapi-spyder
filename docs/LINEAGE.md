@@ -61,3 +61,41 @@ That separation is deliberate:
 - **runtime lineage**: observed from telemetry/tracing
 
 The UI can combine all three without pretending they have the same confidence level.
+
+## Change-impact lineage
+
+A lineage graph becomes much more useful when it is compared across snapshots.
+
+FastAPI Studio can keep or load a baseline `FastAPIMap`, inspect the current app again and produce a semantic diff. Changes to schemas and dependencies are then expanded through lineage to the routes that depend on them.
+
+Example:
+
+```text
+baseline                         current
+
+BookMetadata                     BookMetadata
+  isbn: str                       isbn: str
+  title: str                      title: str
+                                  source: str  [new required field]
+       \                              /
+        \                            /
+         +---- POST /books/metadata
+         +---- PUT  /books/{id}
+```
+
+The useful output is not merely "JSON changed":
+
+```text
+MODEL CHANGED: BookMetadata
+compatibility candidate:
+  required schema field added: source
+
+affected routes:
+  POST /books/metadata
+  PUT /books/{id}
+```
+
+This is the distinction between a generic OpenAPI diff and FastAPI Studio's intended developer workflow: the diff is connected back to the Python implementation and to the dependency/schema blast radius.
+
+Compatibility findings are deliberately labeled **candidates**. FastAPI Studio can detect structural signals such as removed routes, newly required fields, parameter type changes and changed response models, but it cannot prove how every external client behaves.
+
