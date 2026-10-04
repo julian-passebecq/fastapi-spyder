@@ -707,11 +707,11 @@ class FastAPIDiagramWidget(QWidget):
             arrow.setToolTip(edge.relation)
             self._scene.addItem(arrow)
 
-            if projection.mode != "global":
-                relation_text = (
-                    edge.relation.replace("observed_", "observed ")
-                    .replace("_", " ")
-                )
+            if (
+                projection.mode != "global"
+                and not edge.relation.startswith("observed_")
+            ):
+                relation_text = edge.relation.replace("_", " ")
                 relation = QGraphicsSimpleTextItem(relation_text)
                 relation.setBrush(QBrush(palette.text().color()))
                 relation.setPos(
