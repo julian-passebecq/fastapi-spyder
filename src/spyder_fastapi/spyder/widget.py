@@ -13,6 +13,7 @@ from qtpy.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QSplitter,
@@ -99,6 +100,16 @@ class FastAPIStudioWidget(PluginMainWidget):
         controls.addWidget(self._target, 1)
         controls.addWidget(self._discover_button)
         controls.addWidget(self._inspect_button)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Filter"))
+        self._filter = QLineEdit()
+        self._filter.setPlaceholderText(
+            "Route, model or dependency..."
+        )
+        self._filter.setClearButtonEnabled(True)
+        self._filter.textChanged.connect(self._apply_filter)
+        filter_row.addWidget(self._filter, 1)
 
         self._workdir_label = QLabel()
         self._workdir_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -208,6 +219,7 @@ class FastAPIStudioWidget(PluginMainWidget):
 
         layout = QVBoxLayout()
         layout.addLayout(controls)
+        layout.addLayout(filter_row)
         layout.addWidget(self._workdir_label)
         layout.addWidget(self._interpreter_label)
         layout.addWidget(self._status)
@@ -396,6 +408,7 @@ class FastAPIStudioWidget(PluginMainWidget):
             )
         )
 
+        self._apply_filter(self._filter.text())
         self._status.setText(
             f"Loaded {api_map.title}: "
             f"{len(api_map.routes)} routes, "
@@ -677,6 +690,37 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._lineage_tree.expandToDepth(2)
         self._lineage_tree.resizeColumnToContents(0)
         self._lineage_tree.resizeColumnToContents(2)
+
+    # --- Filtering
+    # ------------------------------------------------------------------
+    def _apply_filter(self, text: str) -> None:
+        needle = text.strip().casefold()
+
+        for index in range(self._routes_tree.topLevelItemCount()):
+            path_item = self._routes_tree.topLevelItem(index)
+            path_matches = not needle or needle in path_item.text(1).casefold()
+            visible_children = False
+
+            for child_index in range(path_item.childCount()):
+                child = path_item.child(child_index)
+                route_id = str(child.data(0, _ROLE_ID) or "")
+                haystack = " ".join(
+                    [child.text(0), child.text(1), route_id]
+                ).casefold()
+                visible = path_matches or not needle or needle in haystack
+                child.setHidden(not visible)
+                visible_children = visible_children or visible
+
+            path_item.setHidden(bool(needle) and not (path_matches or visible_children))
+
+        for tree in (self._models_tree, self._dependencies_tree):
+            for index in range(tree.topLevelItemCount()):
+                item = tree.topLevelItem(index)
+                haystack = " ".join(
+                    item.text(column)
+                    for column in range(item.columnCount())
+                ).casefold()
+                item.setHidden(bool(needle) and needle not in haystack)
 
     # --- Source navigation
     # ------------------------------------------------------------------
