@@ -268,7 +268,7 @@ class FastAPIStudioWidget(PluginMainWidget):
 
         self._request_lab = RequestLabWidget()
         self._request_lab.sig_status.connect(self._status.setText)
-        self._request_lab.sig_open_source.connect(self.sig_open_source)
+        self._request_lab.sig_open_source.connect(self.sig_open_source.emit)
         self._request_lab.set_python_executable(self._python_executable)
         self._request_lab.set_working_directory(self._workdir)
         self._tabs.addTab(self._request_lab, "Request Lab")
