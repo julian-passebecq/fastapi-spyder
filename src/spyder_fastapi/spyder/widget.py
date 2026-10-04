@@ -804,9 +804,15 @@ class FastAPIStudioWidget(PluginMainWidget):
         ]
 
         params = "\n".join(
-            f"  {parameter.location:6} {parameter.name}: "
-            f"{parameter.type_name}"
-            f"{' (required)' if parameter.required else ''}"
+            f"  {parameter.location:6} "
+            f"{parameter.alias or parameter.name}"
+            + (
+                f" [python: {parameter.name}]"
+                if parameter.alias and parameter.alias != parameter.name
+                else ""
+            )
+            + f": {parameter.type_name}"
+            + (" (required)" if parameter.required else "")
             for parameter in route.parameters
         ) or "  -"
 
@@ -914,7 +920,14 @@ class FastAPIStudioWidget(PluginMainWidget):
             if child in dependencies_by_id
         ]
         params = "\n".join(
-            f"  {parameter.location:6} {parameter.name}: {parameter.type_name}"
+            f"  {parameter.location:6} "
+            f"{parameter.alias or parameter.name}"
+            + (
+                f" [python: {parameter.name}]"
+                if parameter.alias and parameter.alias != parameter.name
+                else ""
+            )
+            + f": {parameter.type_name}"
             for parameter in dependency.parameters
         ) or "  -"
         routes = impacted_routes(self._api_map, dependency.id)
