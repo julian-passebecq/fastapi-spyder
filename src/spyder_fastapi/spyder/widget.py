@@ -34,7 +34,7 @@ from spyder_fastapi.core import (
     impacted_routes,
     load_snapshot,
     save_snapshot,
-    tests_for_route,
+    route_tests,
 )
 from spyder_fastapi.models import (
     APIDiff,
@@ -819,7 +819,7 @@ class FastAPIStudioWidget(PluginMainWidget):
             self._routes_tree.addTopLevelItem(path_item)
 
             for route in sorted(by_path[path], key=lambda candidate: candidate.method):
-                route_tests = tests_for_route(self._test_index, route.id)
+                route_tests = route_tests(self._test_index, route.id)
                 unique_tests = {
                     (test.source.file, test.test_name)
                     for test in route_tests
@@ -888,7 +888,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         ) or "  -"
 
         deps = "\n".join(f"  {_short_name(name)}" for name in dependency_names) or "  -"
-        route_tests = tests_for_route(self._test_index, route.id)
+        route_tests = route_tests(self._test_index, route.id)
         unique_route_tests: dict[tuple[str | None, str], str] = {}
         for test in route_tests:
             key = (test.source.file, test.test_name)
