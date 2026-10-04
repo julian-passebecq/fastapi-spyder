@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from hashlib import sha1
 
 from spyder_fastapi.core.lineage import impacted_routes
+from spyder_fastapi.core.telemetry import (
+    NativeTelemetryStore,
+    is_external_span,
+    span_category,
+    span_route_id,
+    span_target,
+)
 from spyder_fastapi.models import (
     DiagramEdge,
     DiagramNode,
@@ -328,3 +336,251 @@ def impact_projection(
         ),
         focus_id=node_id,
     )
+
+
+def _runtime_percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(float(value) for value in values)
+    if len(ordered) == 1:
+        return ordered[0]
+
+    rank = (len(ordered) - 1) * percentile
+    lower = int(rank)
+    upper = min(lower + 1, len(ordered) - 1)
+    if lower == upper:
+        return ordered[lower]
+
+    weight = rank - lower
+    return ordered[lower] * (1 - weight) + ordered[upper] * weight
+
+
+def _runtime_handler_anchor(
+    api_map: FastAPIMap,
+    route_id: str,
+    projected_ids: set[str],
+) -> str | None:
+    route_node = f"route:{route_id}"
+    for edge in api_map.lineage.edges:
+        if (
+            edge.source == route_node
+            and edge.relation == "handled_by"
+            and edge.target in projected_ids
+        ):
+            return edge.target
+    return None
+
+
+def _runtime_dependency_anchor(
+    api_map: FastAPIMap,
+    function_name: str | None,
+    projected_ids: set[str],
+) -> str | None:
+    if not function_name:
+        return None
+
+    exact = [
+        dependency.id
+        for dependency in api_map.dependencies
+        if dependency.name == function_name
+        and dependency.id in projected_ids
+    ]
+    if len(exact) == 1:
+        return exact[0]
+
+    short_name = function_name.rsplit(".", 1)[-1]
+    suffix = [
+        dependency.id
+        for dependency in api_map.dependencies
+        if dependency.name.rsplit(".", 1)[-1] == short_name
+        and dependency.id in projected_ids
+    ]
+    return suffix[0] if len(suffix) == 1 else None
+
+
+def _runtime_anchor(
+    api_map: FastAPIMap,
+    route_id: str,
+    projected_ids: set[str],
+    span,
+    spans_by_id: dict[str, object],
+) -> str:
+    """Anchor one observed downstream span to the closest static FastAPI node."""
+
+    route_node = f"route:{route_id}"
+    handler = _runtime_handler_anchor(
+        api_map,
+        route_id,
+        projected_ids,
+    )
+
+    parent_id = span.parent_span_id
+    visited: set[str] = set()
+    while parent_id and parent_id not in visited:
+        visited.add(parent_id)
+        parent = spans_by_id.get(parent_id)
+        if parent is None:
+            break
+
+        if parent.name == "fastapi.dependencies":
+            function_name = parent.attributes.get("code.function.name")
+            dependency = _runtime_dependency_anchor(
+                api_map,
+                str(function_name) if function_name else None,
+                projected_ids,
+            )
+            if dependency is not None:
+                return dependency
+            return route_node
+
+        if parent.name == "fastapi.endpoint":
+            return handler or route_node
+
+        # Background tasks and serialization are runtime phases rather than
+        # deterministic static nodes in FastAPIMap. Keep them attached to the
+        # route instead of pretending they are handler/dependency lineage.
+        if parent.name in {
+            "fastapi.background_task",
+            "fastapi.serialization",
+        }:
+            return route_node
+
+        parent_id = parent.parent_span_id
+
+    return handler or route_node
+
+
+def overlay_runtime_lineage(
+    api_map: FastAPIMap,
+    projection: DiagramProjection,
+    telemetry: NativeTelemetryStore,
+) -> DiagramProjection:
+    """Overlay observed OpenTelemetry downstream calls on a static projection.
+
+    The returned graph keeps static/test/runtime evidence separate. Runtime
+    nodes are only created from spans actually captured in traces whose route
+    already exists in the current projection.
+    """
+
+    projected_route_ids = {
+        node.route_id
+        for node in projection.nodes
+        if node.kind == "route" and node.route_id is not None
+    }
+    if not projected_route_ids or not telemetry.spans:
+        return projection.model_copy(deep=True)
+
+    result = projection.model_copy(deep=True)
+    projected_ids = {node.id for node in result.nodes}
+    runtime_groups: dict[
+        tuple[str, str, str, str, str],
+        list[object],
+    ] = defaultdict(list)
+
+    for trace_id in telemetry.trace_ids():
+        root = telemetry.trace_root(trace_id)
+        route_id = span_route_id(root) if root is not None else None
+        if route_id not in projected_route_ids:
+            continue
+
+        trace_spans = telemetry.trace_spans(trace_id)
+        spans_by_id = {span.span_id: span for span in trace_spans}
+
+        for span in trace_spans:
+            if not is_external_span(span):
+                continue
+
+            category = span_category(span)
+            target = span_target(span) or span.name
+            anchor = _runtime_anchor(
+                api_map,
+                route_id,
+                projected_ids,
+                span,
+                spans_by_id,
+            )
+            key = (
+                route_id,
+                anchor,
+                category,
+                target,
+                span.name,
+            )
+            runtime_groups[key].append(span)
+
+    if not runtime_groups:
+        return result
+
+    existing_edges = {
+        (edge.source, edge.target, edge.relation)
+        for edge in result.edges
+    }
+
+    for (
+        route_id,
+        anchor,
+        category,
+        target,
+        span_name,
+    ), spans in sorted(runtime_groups.items()):
+        ordered = sorted(spans, key=lambda item: item.end_ns)
+        durations = [span.duration_ms for span in ordered]
+        digest = sha1(
+            "|".join(
+                [
+                    route_id,
+                    anchor,
+                    category,
+                    target,
+                    span_name,
+                ]
+            ).encode("utf-8")
+        ).hexdigest()[:16]
+        node_id = f"runtime:{category}:{digest}"
+
+        label = target
+        if category == "database":
+            operation = ordered[-1].attributes.get("db.operation.name")
+            if operation:
+                label = f"{target} · {operation}"
+
+        result.nodes.append(
+            DiagramNode(
+                id=node_id,
+                kind=category,
+                label=label,
+                route_id=route_id,
+                evidence="runtime",
+                observed_count=len(ordered),
+                average_ms=sum(durations) / len(durations),
+                p95_ms=_runtime_percentile(durations, 0.95),
+                last_ms=ordered[-1].duration_ms,
+                target=target,
+            )
+        )
+
+        relation = f"observed_{category.replace('-', '_')}"
+        edge_key = (anchor, node_id, relation)
+        if edge_key not in existing_edges:
+            result.edges.append(
+                DiagramEdge(
+                    source=anchor,
+                    target=node_id,
+                    relation=relation,
+                )
+            )
+            existing_edges.add(edge_key)
+
+    result.nodes.sort(
+        key=lambda node: (
+            node.evidence,
+            node.kind,
+            node.label,
+            node.id,
+        )
+    )
+    result.edges.sort(
+        key=lambda edge: (edge.source, edge.target, edge.relation)
+    )
+    return result
+
