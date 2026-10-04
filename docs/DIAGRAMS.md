@@ -157,3 +157,8 @@ than inventing a precise static relationship.
 
 The **Observed I/O** toggle removes these runtime nodes/edges while leaving the
 deterministic graph and static test evidence untouched.
+
+Double-clicking an observed runtime node drills into the Telemetry tab and
+focuses the latest captured trace for that route. Runtime lineage therefore
+stays traceable back to the underlying OpenTelemetry evidence instead of
+becoming a second uninspectable architecture truth.
