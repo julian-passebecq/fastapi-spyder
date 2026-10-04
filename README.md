@@ -1,1 +1,145 @@
-# fastapi-spyder
+# FastAPI Spyder
+
+**See your FastAPI as it actually runs.**
+
+`fastapi-spyder` is an external Spyder plugin focused on one framework: FastAPI. It does not fork Spyder and it does not try to become a scheduler, data platform or observability suite. It adds FastAPI-specific architecture knowledge on top of Spyder's existing editor, debugger, variable explorer and profiler.
+
+## Why this project exists
+
+FastAPI makes APIs concise, but important runtime structure is spread across decorators, Pydantic models, `Depends()` trees, source files and generated OpenAPI. Swagger shows the HTTP contract; a generic Python debugger shows stack frames. Neither gives a developer a single map from **request contract to Python implementation**.
+
+FastAPI Studio aims to make that map inspectable and clickable:
+
+```text
+HTTP request
+    |
+    +-- path/query/header/body parameters
+    |
+    +-- Pydantic validation
+    |
+    +-- Depends() / nested dependencies
+    |
+    +-- route handler  <----> Python source line
+    |
+    +-- response model
+    |
+    +-- HTTP response
+```
+
+The practical goal is faster comprehension and safer changes: answer "what calls this?", "what does this endpoint depend on?", "which routes use this model?", "what breaks if I change it?" and later "where did this request spend its time?" without mentally reconstructing the application.
+
+## Contract and dependency lineage
+
+Lineage is a first-class feature, not a decorative graph.
+
+The first implementation records only relationships FastAPI exposes deterministically:
+
+- route -> request parameters
+- body parameter -> Pydantic/OpenAPI model
+- route -> dependency -> nested dependency
+- route -> Python handler and source location
+- handler -> response model
+- shared model/dependency -> every route that uses it
+
+This enables useful **impact analysis**. Selecting `BookMetadata`, `get_db`, or `get_current_user` can show every affected endpoint before a change is made.
+
+Example:
+
+```text
+POST /books/metadata
+        |
+        +-- body: book ------> BookMetadata
+        |
+        +-- Depends() -------> get_request_context
+        |                         |
+        |                         +--> header: ingestion-id
+        |
+        +-- handled_by ------> ingest_metadata()  [app.py:37]
+                                  |
+                                  +--> StoredBook
+```
+
+We deliberately do **not** pretend static source inspection can reliably infer arbitrary S3, database, Kafka or HTTP side effects. A later runtime telemetry layer can add observed downstream edges (SQL spans, HTTP calls, queues, storage) to the same graph. Deterministic lineage first; observed runtime lineage second.
+
+## Architecture
+
+```text
+FastAPI application
+       |
+       v
+core inspector          (no Qt / no Spyder dependency)
+       |
+       v
+FastAPIMap              (Pydantic model)
+       |
+       +--> JSON bridge / snapshots / API diff
+       |
+       +--> Spyder FastAPI panels
+       |
+       +--> tests / CI / future telemetry
+```
+
+Keeping the core headless is intentional. Spyder is the human UI, not the data model.
+
+## Current bootstrap
+
+The repository now contains the v0.1 foundation:
+
+- FastAPI route discovery
+- path/query/header/cookie/body parameter extraction
+- Pydantic/OpenAPI schema extraction
+- recursive `Depends()` discovery
+- Python source file + line mapping
+- normalized lineage graph
+- dependency blast-radius query
+- serializable `FastAPIMap` JSON bridge
+- headless CLI
+- initial Spyder dockable plugin entry point
+- tests and a small bookstore example
+
+Inspect the example without Spyder:
+
+```bash
+pip install -e ".[dev]"
+PYTHONPATH=examples/bookstore fastapi-spyder app:app
+```
+
+## Product roadmap
+
+### V0.1 - Understand
+
+- app discovery
+- API tree
+- route inspector
+- Pydantic model browser
+- dependency graph
+- contract/dependency lineage
+- source navigation
+- JSON/OpenAPI view
+
+### V0.2 - Change safely
+
+- API snapshots and semantic diff
+- model/dependency blast radius
+- 422 validation visualizer
+- request builder
+
+### V0.3 - Debug requests
+
+- request history
+- exact request replay
+- replay + Spyder breakpoint
+- exception -> source navigation
+- Variable Explorer integration
+
+### V0.4 - Observe locally
+
+- request waterfall
+- per-dependency/handler latency
+- OpenTelemetry-based local traces
+- correlated errors/logs
+- optional export to an external observability backend
+
+## Non-goals
+
+FastAPI Studio is not Airflow, Dagster, Grafana, an API gateway, a data processor or a Spyder fork. Those boundaries are intentional.
