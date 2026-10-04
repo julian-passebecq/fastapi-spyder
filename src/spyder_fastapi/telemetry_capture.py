@@ -6,6 +6,7 @@ and its JSON bridge remain independent from the OpenTelemetry SDK.
 
 from __future__ import annotations
 
+import inspect
 import json
 import threading
 from importlib.metadata import PackageNotFoundError, version
@@ -304,6 +305,37 @@ def configure_native_telemetry(
 
     path = _SINK.set_path(destination)
     fastapi_version = _fastapi_version()
+
+    try:
+        from fastapi import FastAPI
+    except ImportError:
+        payload = {
+            "signal": "control",
+            "schema_version": _SCHEMA_VERSION,
+            "event": "capture_unavailable",
+            "message": "FastAPI is not installed in the selected environment.",
+            "fastapi_version": fastapi_version,
+            "tracing": False,
+            "logs": False,
+        }
+        _SINK.write(payload)
+        return payload
+
+    if "telemetry" not in inspect.signature(FastAPI).parameters:
+        payload = {
+            "signal": "control",
+            "schema_version": _SCHEMA_VERSION,
+            "event": "capture_unavailable",
+            "message": (
+                "This FastAPI version does not expose native telemetry yet. "
+                "Architecture, Request Lab and client timing remain available."
+            ),
+            "fastapi_version": fastapi_version,
+            "tracing": False,
+            "logs": False,
+        }
+        _SINK.write(payload)
+        return payload
 
     try:
         tracing, trace_mode = _install_trace_capture()
