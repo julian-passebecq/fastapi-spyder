@@ -26,8 +26,8 @@ from qtpy.QtWidgets import (
 )
 from spyder.api.widgets.main_widget import PluginMainWidget
 
-from spyder_fastapi.core import discover_targets, impacted_routes
-from spyder_fastapi.models import FastAPIMap, SourceRef
+from spyder_fastapi.core import diff_maps, discover_targets, impacted_routes
+from spyder_fastapi.models import APIDiff, FastAPIMap, SourceRef
 
 
 _ROLE_ID = 32
@@ -56,6 +56,10 @@ class FastAPIStudioWidget(PluginMainWidget):
         super().__init__(name, plugin, parent)
 
         self._api_map: FastAPIMap | None = None
+        self._baseline: FastAPIMap | None = None
+        self._baseline_target: str | None = None
+        self._loaded_target: str | None = None
+        self._current_diff: APIDiff | None = None
         self._workdir = os.getcwd()
         self._python_executable = sys.executable
         self._process: QProcess | None = None
@@ -95,11 +99,24 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._inspect_button = QPushButton("Inspect")
         self._inspect_button.clicked.connect(self.inspect_current_app)
 
+        self._baseline_button = QPushButton("Set baseline")
+        self._baseline_button.setEnabled(False)
+        self._baseline_button.setToolTip(
+            "Keep the currently inspected API as the comparison baseline."
+        )
+        self._baseline_button.clicked.connect(self.set_baseline)
+
+        self._clear_baseline_button = QPushButton("Clear baseline")
+        self._clear_baseline_button.setEnabled(False)
+        self._clear_baseline_button.clicked.connect(self.clear_baseline)
+
         controls = QHBoxLayout()
         controls.addWidget(QLabel("App"))
         controls.addWidget(self._target, 1)
         controls.addWidget(self._discover_button)
         controls.addWidget(self._inspect_button)
+        controls.addWidget(self._baseline_button)
+        controls.addWidget(self._clear_baseline_button)
 
         filter_row = QHBoxLayout()
         filter_row.addWidget(QLabel("Filter"))
@@ -124,6 +141,33 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._tabs = QTabWidget()
         self._overview = QTextBrowser()
         self._tabs.addTab(self._overview, "Overview")
+
+        changes_page = QWidget()
+        changes_layout = QVBoxLayout(changes_page)
+        self._baseline_label = QLabel(
+            "No baseline. Inspect an app, then choose Set baseline."
+        )
+        self._baseline_label.setWordWrap(True)
+        changes_layout.addWidget(self._baseline_label)
+
+        self._changes_tree = QTreeWidget()
+        self._changes_tree.setHeaderLabels(
+            ["Delta", "Entity", "Name", "Affected", "Compatibility risk"]
+        )
+        self._changes_tree.setRootIsDecorated(False)
+        self._changes_tree.currentItemChanged.connect(self._change_selected)
+        self._changes_tree.itemDoubleClicked.connect(self._open_tree_item_source)
+
+        self._change_details = QPlainTextEdit()
+        self._change_details.setReadOnly(True)
+
+        changes_splitter = QSplitter(Qt.Horizontal)
+        changes_splitter.addWidget(self._changes_tree)
+        changes_splitter.addWidget(self._change_details)
+        changes_splitter.setStretchFactor(0, 2)
+        changes_splitter.setStretchFactor(1, 3)
+        changes_layout.addWidget(changes_splitter, 1)
+        self._tabs.addTab(changes_page, "Changes")
 
         self._routes_tree = QTreeWidget()
         self._routes_tree.setHeaderLabels(["Method", "Path"])
@@ -380,6 +424,7 @@ class FastAPIStudioWidget(PluginMainWidget):
                 )
                 return
 
+            self._loaded_target = self._target.currentText().strip() or None
             self.set_api_map(api_map)
             if stderr:
                 self._status.setToolTip(stderr)
@@ -392,7 +437,9 @@ class FastAPIStudioWidget(PluginMainWidget):
     # ------------------------------------------------------------------
     def set_api_map(self, api_map: FastAPIMap) -> None:
         self._api_map = api_map
+        self._baseline_button.setEnabled(True)
         self._populate_overview()
+        self._populate_changes()
         self._populate_routes()
         self._populate_models()
         self._populate_dependencies()
@@ -414,6 +461,133 @@ class FastAPIStudioWidget(PluginMainWidget):
             f"{len(api_map.routes)} routes, "
             f"{len(api_map.models)} models, "
             f"{len(api_map.dependencies)} dependencies."
+        )
+
+    def _snapshot_key(self) -> str:
+        if self._loaded_target:
+            return self._loaded_target
+        target = self._target.currentText().strip()
+        if target:
+            return target
+        if self._api_map is not None:
+            return self._api_map.title
+        return "<unknown>"
+
+    def set_baseline(self) -> None:
+        """Capture the currently loaded API map for semantic comparison."""
+
+        if self._api_map is None:
+            self._status.setText("Inspect a FastAPI application before setting a baseline.")
+            return
+
+        self._baseline = self._api_map.model_copy(deep=True)
+        self._baseline_target = self._snapshot_key()
+        self._clear_baseline_button.setEnabled(True)
+        self._populate_changes()
+        self._status.setText(
+            f"Baseline captured for {self._baseline_target}. "
+            "Edit the API and Inspect again to see semantic changes."
+        )
+
+    def clear_baseline(self) -> None:
+        self._baseline = None
+        self._baseline_target = None
+        self._current_diff = None
+        self._clear_baseline_button.setEnabled(False)
+        self._populate_changes()
+
+    def _populate_changes(self) -> None:
+        self._changes_tree.clear()
+        self._change_details.clear()
+        self._current_diff = None
+
+        if self._baseline is None:
+            self._baseline_label.setText(
+                "No baseline. Inspect an app, then choose Set baseline."
+            )
+            return
+
+        if self._api_map is None:
+            self._baseline_label.setText(
+                f"Baseline: {self._baseline_target}. No current API loaded."
+            )
+            return
+
+        current_target = self._snapshot_key()
+        if self._baseline_target != current_target:
+            self._baseline_label.setText(
+                f"Baseline belongs to {self._baseline_target}; "
+                f"current API is {current_target}. Set a new baseline to compare."
+            )
+            return
+
+        diff = diff_maps(self._baseline, self._api_map)
+        self._current_diff = diff
+        self._baseline_label.setText(
+            f"Baseline: {self._baseline_target} | "
+            f"{len(diff.changes)} semantic change(s) | "
+            f"{len(diff.affected_routes)} affected route(s) | "
+            f"{diff.breaking_candidates} compatibility-risk candidate(s)"
+        )
+
+        if not diff.changes:
+            self._change_details.setPlainText(
+                "No semantic FastAPI contract or dependency changes detected."
+            )
+            return
+
+        symbols = {"added": "+", "removed": "-", "changed": "~"}
+        for index, change in enumerate(diff.changes):
+            item = QTreeWidgetItem(
+                [
+                    symbols[change.kind],
+                    change.entity,
+                    change.name,
+                    str(len(change.affected_routes)),
+                    "candidate" if change.breaking_reasons else "",
+                ]
+            )
+            item.setData(0, _ROLE_ID, index)
+            self._set_item_source(item, change.source)
+            if change.affected_routes:
+                item.setToolTip(3, "\n".join(change.affected_routes))
+            if change.breaking_reasons:
+                item.setToolTip(4, "\n".join(change.breaking_reasons))
+            self._changes_tree.addTopLevelItem(item)
+
+        for column in range(self._changes_tree.columnCount()):
+            self._changes_tree.resizeColumnToContents(column)
+
+        self._changes_tree.setCurrentItem(self._changes_tree.topLevelItem(0))
+
+    def _change_selected(self, item: QTreeWidgetItem | None, _previous) -> None:
+        if item is None or self._current_diff is None:
+            self._change_details.clear()
+            return
+
+        index = item.data(0, _ROLE_ID)
+        if index is None or not (0 <= int(index) < len(self._current_diff.changes)):
+            self._change_details.clear()
+            return
+
+        change = self._current_diff.changes[int(index)]
+        fields = "\n".join(f"  {field}" for field in change.fields) or "  -"
+        routes = (
+            "\n".join(f"  {route}" for route in change.affected_routes)
+            or "  -"
+        )
+        risks = (
+            "\n".join(f"  {reason}" for reason in change.breaking_reasons)
+            or "  -"
+        )
+
+        self._change_details.setPlainText(
+            f"{change.kind.upper()} {change.entity}: {change.name}\n\n"
+            f"Changed semantic fields\n{fields}\n\n"
+            f"Affected routes\n{routes}\n\n"
+            f"Compatibility-risk candidates\n{risks}\n\n"
+            "Risk candidates are conservative signals, not a guarantee that "
+            "a client is broken."
         )
 
     def _populate_overview(self) -> None:
