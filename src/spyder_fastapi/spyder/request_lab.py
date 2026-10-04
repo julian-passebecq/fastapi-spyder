@@ -10,6 +10,7 @@ from pathlib import Path
 from qtpy.QtCore import QProcess, QProcessEnvironment, Qt, Signal
 from qtpy.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -43,6 +44,7 @@ _ROLE_SOURCE_FILE = Qt.UserRole + 1
 _ROLE_SOURCE_LINE = Qt.UserRole + 2
 _ROLE_REQUIRED = Qt.UserRole + 3
 _ROLE_HISTORY_INDEX = Qt.UserRole + 4
+_ROLE_IS_FILE = Qt.UserRole + 5
 
 
 def _source_text(source: SourceRef | None) -> str:
@@ -175,6 +177,36 @@ class RequestLabWidget(QWidget):
         self._body = QPlainTextEdit()
         self._body.setPlaceholderText("No JSON request body for this route.")
         body_layout.addWidget(self._body)
+
+        self._body_fields = QTableWidget(0, 5)
+        self._body_fields.setHorizontalHeaderLabels(
+            ["Kind", "Name", "Type", "Required", "Value / file path"]
+        )
+        self._body_fields.verticalHeader().setVisible(False)
+        self._body_fields.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeToContents
+        )
+        self._body_fields.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeToContents
+        )
+        self._body_fields.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeToContents
+        )
+        self._body_fields.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeToContents
+        )
+        self._body_fields.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.Stretch
+        )
+        self._body_fields.hide()
+        body_layout.addWidget(self._body_fields)
+
+        self._browse_body_file = QPushButton("Browse selected file...")
+        self._browse_body_file.setEnabled(False)
+        self._browse_body_file.clicked.connect(self._browse_selected_body_file)
+        self._browse_body_file.hide()
+        body_layout.addWidget(self._browse_body_file)
+
         input_splitter.addWidget(body_page)
 
         root.addWidget(input_splitter, 2)
@@ -315,6 +347,10 @@ class RequestLabWidget(QWidget):
     def _route_changed(self, route_id: str) -> None:
         self._parameters.setRowCount(0)
         self._body.clear()
+        self._body_fields.setRowCount(0)
+        self._body_fields.hide()
+        self._browse_body_file.hide()
+        self._browse_body_file.setEnabled(False)
         self._validation.clear()
         self._response.clear()
         self._response_summary.setText("No request sent.")
@@ -361,17 +397,27 @@ class RequestLabWidget(QWidget):
         )
         self._populate_parameter_table(template)
 
-        has_body = template.body_example is not None or template.body_required
+        has_body = (
+            template.body_example is not None
+            or template.body_required
+            or bool(template.body_fields)
+        )
         content_type = template.body_content_type
         json_body_supported = (
             content_type is None
             or content_type == "application/json"
-            or content_type.endswith("+json")
+            or bool(content_type and content_type.endswith("+json"))
         )
-        body_enabled = has_body and json_body_supported
+        form_body_supported = content_type in {
+            "application/x-www-form-urlencoded",
+            "multipart/form-data",
+        }
 
-        self._body.setEnabled(body_enabled)
-        self._reset_body.setEnabled(body_enabled)
+        self._body.setVisible(json_body_supported)
+        self._body.setEnabled(has_body and json_body_supported)
+        self._body_fields.setVisible(form_body_supported)
+        self._browse_body_file.setVisible(content_type == "multipart/form-data")
+        self._reset_body.setEnabled(has_body and json_body_supported)
         self._open_body_source.setEnabled(
             self._body_source is not None and bool(self._body_source.file)
         )
@@ -384,22 +430,34 @@ class RequestLabWidget(QWidget):
                 + (" (required)" if template.body_required else "")
             )
             self._reset_body_example()
+        elif has_body and form_body_supported:
+            self._body_label.setText(
+                f"Form body [{content_type}]"
+                + (" (required)" if template.body_required else "")
+            )
+            self._populate_body_fields(template)
         elif has_body:
             self._body_label.setText(
                 f"Body [{content_type}] - media type not supported yet"
             )
+            self._body.setVisible(True)
+            self._body.setEnabled(False)
             self._body.setPlainText(
-                "Request Lab currently sends JSON bodies only."
+                "Request Lab does not support this request body media type yet."
             )
         else:
-            self._body_label.setText("JSON body - none")
+            self._body_label.setText("Request body - none")
+            self._body.setVisible(True)
+            self._body.setEnabled(False)
             self._body.clear()
 
-        if has_body and template.body_required and not json_body_supported:
+        if has_body and template.body_required and not (
+            json_body_supported or form_body_supported
+        ):
             self._send.setEnabled(False)
             self.sig_status.emit(
-                "Request Lab currently supports JSON request bodies only; "
-                f"this route expects {content_type}."
+                "Request Lab does not support this request body media type yet: "
+                f"{content_type}."
             )
         else:
             self._send.setEnabled(True)
@@ -435,6 +493,67 @@ class RequestLabWidget(QWidget):
             self._parameters.setItem(row, 2, type_item)
             self._parameters.setItem(row, 3, required_item)
             self._parameters.setItem(row, 4, value_item)
+
+    def _populate_body_fields(self, template: RequestTemplate) -> None:
+        self._body_fields.setRowCount(len(template.body_fields))
+        has_file = False
+
+        for row, field in enumerate(template.body_fields):
+            kind_item = QTableWidgetItem("file" if field.is_file else "field")
+            name_item = QTableWidgetItem(field.name)
+            type_item = QTableWidgetItem(field.type_name)
+            required_item = QTableWidgetItem("yes" if field.required else "no")
+            value_item = QTableWidgetItem(_value_text(field.example))
+
+            for item in (kind_item, name_item, type_item, required_item):
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
+            kind_item.setData(_ROLE_REQUIRED, field.required)
+            kind_item.setData(_ROLE_IS_FILE, field.is_file)
+            if field.source is not None and field.source.file:
+                kind_item.setData(_ROLE_SOURCE_FILE, field.source.file)
+                kind_item.setData(_ROLE_SOURCE_LINE, field.source.line or 1)
+
+            if field.description:
+                value_item.setToolTip(field.description)
+            if field.is_file:
+                has_file = True
+                value_item.setToolTip(
+                    "Enter a local file path or select this row and use Browse."
+                )
+
+            self._body_fields.setItem(row, 0, kind_item)
+            self._body_fields.setItem(row, 1, name_item)
+            self._body_fields.setItem(row, 2, type_item)
+            self._body_fields.setItem(row, 3, required_item)
+            self._body_fields.setItem(row, 4, value_item)
+
+        self._browse_body_file.setEnabled(has_file)
+
+    def _browse_selected_body_file(self) -> None:
+        row = self._body_fields.currentRow()
+        if row < 0:
+            self.sig_status.emit("Select a multipart file row first.")
+            return
+
+        kind_item = self._body_fields.item(row, 0)
+        if kind_item is None or not bool(kind_item.data(_ROLE_IS_FILE)):
+            self.sig_status.emit("The selected multipart row is not a file field.")
+            return
+
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "Select multipart upload file",
+            self._workdir,
+        )
+        if not path:
+            return
+
+        value_item = self._body_fields.item(row, 4)
+        if value_item is None:
+            value_item = QTableWidgetItem()
+            self._body_fields.setItem(row, 4, value_item)
+        value_item.setText(path)
 
     def _reset_body_example(self) -> None:
         if self._template is None or self._template.body_example is None:
@@ -566,7 +685,14 @@ class RequestLabWidget(QWidget):
             "timeout": 10.0,
         }
 
-        if self._body.isEnabled():
+        content_type = self._template.body_content_type
+        json_body_supported = (
+            content_type is None
+            or content_type == "application/json"
+            or bool(content_type and content_type.endswith("+json"))
+        )
+
+        if self._body.isEnabled() and json_body_supported:
             body_text = self._body.toPlainText().strip()
             if not body_text:
                 if self._template.body_required:
@@ -579,6 +705,42 @@ class RequestLabWidget(QWidget):
                         f"Request body is not valid JSON: {exc.msg} "
                         f"(line {exc.lineno}, column {exc.colno})"
                     ) from exc
+
+        elif content_type in {
+            "application/x-www-form-urlencoded",
+            "multipart/form-data",
+        }:
+            values: dict[str, str] = {}
+            files: dict[str, str] = {}
+
+            for row in range(self._body_fields.rowCount()):
+                kind_item = self._body_fields.item(row, 0)
+                name_item = self._body_fields.item(row, 1)
+                value_item = self._body_fields.item(row, 4)
+                if kind_item is None or name_item is None:
+                    continue
+
+                name = name_item.text()
+                value = value_item.text().strip() if value_item is not None else ""
+                required = bool(kind_item.data(_ROLE_REQUIRED))
+                is_file = bool(kind_item.data(_ROLE_IS_FILE))
+
+                if not value:
+                    if required:
+                        label = "file" if is_file else "form field"
+                        raise ValueError(f"Required {label} is empty: {name}")
+                    continue
+
+                if is_file:
+                    files[name] = value
+                else:
+                    values[name] = value
+
+            if content_type == "application/x-www-form-urlencoded":
+                command["form"] = values
+            else:
+                command["multipart"] = values
+                command["files"] = files
 
         return command
 
