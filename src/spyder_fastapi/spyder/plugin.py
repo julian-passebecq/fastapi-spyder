@@ -17,7 +17,7 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
 
     NAME = "fastapi_studio"
     REQUIRES = []
-    OPTIONAL = [Plugins.Editor, Plugins.WorkingDirectory]
+    OPTIONAL = [Plugins.Editor, Plugins.MainInterpreter, Plugins.WorkingDirectory]
     WIDGET_CLASS = FastAPIStudioWidget
     CONF_SECTION = NAME
     TABIFY = [Plugins.Editor]
@@ -41,6 +41,17 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
             lambda filename, line: editor.load(filename, line)
         )
 
+    @on_plugin_available(plugin=Plugins.MainInterpreter)
+    def on_main_interpreter_available(self):
+        main_interpreter = self.get_plugin(Plugins.MainInterpreter)
+        widget = self.get_widget()
+        widget.set_python_executable(
+            main_interpreter.get_container().get_main_interpreter()
+        )
+        main_interpreter.sig_interpreter_changed.connect(
+            widget.set_python_executable
+        )
+
     @on_plugin_available(plugin=Plugins.WorkingDirectory)
     def on_working_directory_available(self):
         working_directory = self.get_plugin(Plugins.WorkingDirectory)
@@ -53,6 +64,13 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
     @on_plugin_teardown(plugin=Plugins.Editor)
     def on_editor_teardown(self):
         self.get_widget().sig_open_source.disconnect()
+
+    @on_plugin_teardown(plugin=Plugins.MainInterpreter)
+    def on_main_interpreter_teardown(self):
+        main_interpreter = self.get_plugin(Plugins.MainInterpreter)
+        main_interpreter.sig_interpreter_changed.disconnect(
+            self.get_widget().set_python_executable
+        )
 
     @on_plugin_teardown(plugin=Plugins.WorkingDirectory)
     def on_working_directory_teardown(self):
