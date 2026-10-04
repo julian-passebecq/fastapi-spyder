@@ -295,3 +295,67 @@ class RuntimeEvidence(BaseModel):
 
     routes: dict[str, RouteRuntimeStats] = Field(default_factory=dict)
 
+
+class NativeTelemetrySpan(BaseModel):
+    """Normalized OpenTelemetry span captured from the local FastAPI server."""
+
+    signal: Literal["span"] = "span"
+    schema_version: int = 1
+    trace_id: str
+    span_id: str
+    parent_span_id: str | None = None
+    name: str
+    kind: str
+    start_ns: int
+    end_ns: int
+    duration_ms: float
+    status: str | None = None
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    scope_name: str | None = None
+    scope_version: str | None = None
+
+
+class NativeTelemetryLog(BaseModel):
+    """Normalized OpenTelemetry log/event captured from FastAPI."""
+
+    signal: Literal["log"] = "log"
+    schema_version: int = 1
+    timestamp_ns: int | None = None
+    observed_timestamp_ns: int | None = None
+    trace_id: str | None = None
+    span_id: str | None = None
+    severity: str | None = None
+    event_name: str | None = None
+    body: str | None = None
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    exception_type: str | None = None
+    scope_name: str | None = None
+
+
+class NativeTelemetryControl(BaseModel):
+    """Lifecycle/status record for the local native telemetry capture."""
+
+    signal: Literal["control"] = "control"
+    schema_version: int = 1
+    event: str
+    message: str | None = None
+    fastapi_version: str | None = None
+    tracing: bool | None = None
+    logs: bool | None = None
+
+
+class NativeRouteTelemetry(BaseModel):
+    """Aggregated native server-span metrics for one FastAPI route."""
+
+    route_id: str
+    request_count: int = 0
+    error_count: int = 0
+    error_rate: float = 0.0
+    average_ms: float | None = None
+    p50_ms: float | None = None
+    p95_ms: float | None = None
+    min_ms: float | None = None
+    max_ms: float | None = None
+    last_ms: float | None = None
+    last_status_code: int | None = None
+
