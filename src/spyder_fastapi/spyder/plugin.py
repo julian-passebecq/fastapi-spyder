@@ -40,7 +40,7 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
         return QIcon()
 
     def on_initialize(self):
-        pass
+        self._debug_shellwidget = None
 
     @on_plugin_available(plugin=Plugins.Editor)
     def on_editor_available(self):
@@ -99,6 +99,7 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
     def on_ipython_console_available(self):
         widget = self.get_widget()
         widget.sig_start_debug_server.connect(self._start_debug_server)
+        widget.sig_stop_debug_server.connect(self._stop_debug_server)
         widget.set_debug_server_available(True)
 
     def _start_debug_server(
@@ -121,7 +122,8 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
             )
             return
 
-        if ipython_console.get_current_shellwidget() is None:
+        shellwidget = ipython_console.get_current_shellwidget()
+        if shellwidget is None:
             widget.set_status_message(
                 "Open an IPython Console in Spyder before starting the debug server."
             )
@@ -150,10 +152,37 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
             )
             return
 
+        self._debug_shellwidget = shellwidget
+        widget.set_debug_server_running(True)
         widget.set_status_message(
             f"Debug launch sent to Spyder for {target} on "
             f"http://{host}:{port}. Continue the debugger if it stops in the "
-            "launcher, then use Replay selected when the server is listening."
+            "launcher; Request Lab will replay automatically when the server "
+            "starts listening."
+        )
+
+    def _stop_debug_server(self) -> None:
+        """Interrupt only the Spyder shell used to launch this debug server."""
+
+        widget = self.get_widget()
+        shellwidget = self._debug_shellwidget
+        if shellwidget is None:
+            widget.set_debug_server_running(False)
+            widget.set_status_message("No FastAPI debug server is tracked.")
+            return
+
+        try:
+            shellwidget.interrupt_kernel()
+        except Exception as exc:
+            widget.set_status_message(
+                f"Spyder could not interrupt the FastAPI debug server: {exc}"
+            )
+            return
+
+        self._debug_shellwidget = None
+        widget.set_debug_server_running(False)
+        widget.set_status_message(
+            "Interrupt sent to the Spyder shell running the FastAPI debug server."
         )
 
     @on_plugin_available(plugin=Plugins.MainInterpreter)
@@ -189,6 +218,12 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
             widget.sig_start_debug_server.disconnect(self._start_debug_server)
         except (TypeError, RuntimeError):
             pass
+        try:
+            widget.sig_stop_debug_server.disconnect(self._stop_debug_server)
+        except (TypeError, RuntimeError):
+            pass
+        self._debug_shellwidget = None
+        widget.set_debug_server_running(False)
         widget.set_debug_server_available(False)
 
     @on_plugin_teardown(plugin=Plugins.MainInterpreter)
@@ -209,5 +244,7 @@ class FastAPIStudioPlugin(SpyderDockablePlugin):
         return True, ""
 
     def on_close(self, cancelable=False):
+        if self._debug_shellwidget is not None:
+            self._stop_debug_server()
         self.get_widget().shutdown()
         return True
