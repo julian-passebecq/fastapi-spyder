@@ -435,7 +435,7 @@ class FastAPITelemetryWidget(QWidget):
         self._logs = QTreeWidget()
         self._logs.setRootIsDecorated(False)
         self._logs.setHeaderLabels(
-            ["Severity", "Event", "Route", "Message", "Trace"]
+            ["Severity", "Event", "Route", "Message", "Source", "Trace"]
         )
         self._logs.setToolTip(
             "Double-click an exception log to open the nearest source-backed "
@@ -683,35 +683,38 @@ class FastAPITelemetryWidget(QWidget):
         for log in reversed(self._store.logs[-200:]):
             route = log.attributes.get("http.route")
             trace = log.trace_id or "-"
-            item = QTreeWidgetItem(
-                [
-                    log.severity or "-",
-                    log.event_name or "-",
-                    str(route or "-"),
-                    log.body or log.exception_type or "-",
-                    trace[-8:] if trace != "-" else "-",
-                ]
-            )
-            item.setToolTip(4, trace)
-            if log.trace_id:
-                item.setData(0, _ROLE_TRACE_ID, log.trace_id)
-                if (
+            function_name = None
+            if (
+                log.trace_id
+                and (
                     log.exception_type
                     or log.event_name
                     in {
                         "http.server.request.exception",
                         "fastapi.websocket.exception",
                     }
-                ):
-                    function_name = self._store.preferred_source_function(
-                        log.trace_id
-                    )
-                    if function_name:
-                        item.setData(
-                            0,
-                            _ROLE_FUNCTION,
-                            function_name,
-                        )
+                )
+            ):
+                function_name = self._store.preferred_source_function(
+                    log.trace_id
+                )
+
+            item = QTreeWidgetItem(
+                [
+                    log.severity or "-",
+                    log.event_name or "-",
+                    str(route or "-"),
+                    log.body or log.exception_type or "-",
+                    function_name or "-",
+                    trace[-8:] if trace != "-" else "-",
+                ]
+            )
+            item.setToolTip(4, function_name or "No source mapping")
+            item.setToolTip(5, trace)
+            if log.trace_id:
+                item.setData(0, _ROLE_TRACE_ID, log.trace_id)
+            if function_name:
+                item.setData(0, _ROLE_FUNCTION, function_name)
             self._logs.addTopLevelItem(item)
 
         for column in range(self._logs.columnCount()):
