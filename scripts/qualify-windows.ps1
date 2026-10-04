@@ -85,6 +85,10 @@ try {
     & $PythonPath -c "from spyder_fastapi.spyder.compat import spyder_contract_issues, variable_explorer_available; issues=spyder_contract_issues(); assert not issues, issues; assert variable_explorer_available(), 'Variable Explorer unavailable'; print('spyder_debug_contract=PASS'); print('variable_explorer=PASS')"
     Assert-LastExitCode "Spyder debug/editor compatibility contract"
 
+    Write-Host "Verifying FastAPI debug runtime..."
+    & $PythonPath -c "import uvicorn; print('uvicorn=' + uvicorn.__version__); print('debug_runtime=PASS')"
+    Assert-LastExitCode "FastAPI debug runtime"
+
     if (-not $SkipTests) {
         Write-Host "Running the realistic demo tests..."
         & $PythonPath -m pytest -q "examples\data_platform_demo\tests"
@@ -124,6 +128,7 @@ try {
         "- PASS - Spyder external plugin discovery",
         "- PASS - Spyder debug/editor compatibility contract",
         "- PASS - native Variable Explorer availability",
+        "- PASS - Uvicorn debug runtime",
         $(if ($SkipTests) { "- SKIPPED - demo tests" } else { "- PASS - demo tests" }),
         "",
         "## Human-only checks",
