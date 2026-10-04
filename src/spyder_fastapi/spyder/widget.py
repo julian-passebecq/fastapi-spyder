@@ -134,10 +134,19 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._models_tree.setHeaderLabels(["Model", "Routes"])
         self._models_tree.setRootIsDecorated(False)
         self._models_tree.currentItemChanged.connect(self._model_selected)
+        self._models_tree.itemDoubleClicked.connect(self._open_tree_item_source)
         self._model_details = QPlainTextEdit()
         self._model_details.setReadOnly(True)
+        self._model_open = QPushButton("Open model source")
+        self._model_open.clicked.connect(
+            lambda: self._open_tree_item_source(self._models_tree.currentItem(), 0)
+        )
         self._tabs.addTab(
-            self._split_page(self._models_tree, self._model_details),
+            self._split_page(
+                self._models_tree,
+                self._model_details,
+                self._model_open,
+            ),
             "Models",
         )
 
@@ -182,9 +191,13 @@ class FastAPIStudioWidget(PluginMainWidget):
         lineage_layout.addWidget(self._lineage_tree, 1)
         self._tabs.addTab(lineage_page, "Lineage")
 
+        self._openapi_view = QPlainTextEdit()
+        self._openapi_view.setReadOnly(True)
+        self._tabs.addTab(self._openapi_view, "OpenAPI")
+
         self._json_view = QPlainTextEdit()
         self._json_view.setReadOnly(True)
-        self._tabs.addTab(self._json_view, "JSON")
+        self._tabs.addTab(self._json_view, "Map JSON")
 
         self._diagnostics = QPlainTextEdit()
         self._diagnostics.setReadOnly(True)
@@ -372,8 +385,15 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._populate_models()
         self._populate_dependencies()
         self._populate_lineage_routes()
+        self._openapi_view.setPlainText(
+            json.dumps(api_map.openapi, indent=2, sort_keys=True)
+        )
         self._json_view.setPlainText(
-            api_map.model_dump_json(by_alias=True, indent=2)
+            api_map.model_dump_json(
+                by_alias=True,
+                indent=2,
+                exclude={"openapi"},
+            )
         )
 
         self._status.setText(
@@ -506,6 +526,8 @@ class FastAPIStudioWidget(PluginMainWidget):
             routes = impacted_routes(self._api_map, f"model:{model.name}")
             item = QTreeWidgetItem([model.name, str(len(routes))])
             item.setData(0, _ROLE_ID, model.name)
+            self._set_item_source(item, model.source)
+            item.setToolTip(0, _source_text(model.source))
             item.setToolTip(1, "\n".join(routes))
             self._models_tree.addTopLevelItem(item)
 
@@ -530,7 +552,8 @@ class FastAPIStudioWidget(PluginMainWidget):
         route_text = "\n".join(f"  {route}" for route in routes) or "  -"
         schema = json.dumps(model.schema_, indent=2, sort_keys=True)
         self._model_details.setPlainText(
-            f"{model.name}\n\n"
+            f"{model.name}\n"
+            f"{_source_text(model.source)}\n\n"
             f"Blast radius ({len(routes)} route(s))\n{route_text}\n\n"
             f"OpenAPI schema\n{schema}"
         )
