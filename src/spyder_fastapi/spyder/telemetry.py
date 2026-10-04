@@ -680,6 +680,7 @@ class FastAPITelemetryWidget(QWidget):
 
     def _populate_logs(self) -> None:
         self._logs.clear()
+        source_by_trace: dict[str, str | None] = {}
         for log in reversed(self._store.logs[-200:]):
             route = log.attributes.get("http.route")
             trace = log.trace_id or "-"
@@ -695,9 +696,11 @@ class FastAPITelemetryWidget(QWidget):
                     }
                 )
             ):
-                function_name = self._store.preferred_source_function(
-                    log.trace_id
-                )
+                if log.trace_id not in source_by_trace:
+                    source_by_trace[log.trace_id] = (
+                        self._store.preferred_source_function(log.trace_id)
+                    )
+                function_name = source_by_trace[log.trace_id]
 
             item = QTreeWidgetItem(
                 [
