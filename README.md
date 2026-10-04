@@ -112,20 +112,54 @@ The repository now contains the v0.1 foundation:
 - per-route request/error/average/P50/P95 summaries from native server spans
 - request trace tree with FastAPI dependency/endpoint/serialization spans
 - graphical native trace waterfall with relative span timing
+- semantic classification of observed DB / outbound HTTP / messaging / RPC spans
+- external-span targets surfaced directly in trace trees and waterfalls
 - validation and exception KPIs kept separate from 5xx error rate
 - native latency timeline without Grafana, WebEngine or a separate frontend
 - Spyder-native handler breakpoint handoff using the first executable line
 - local uvicorn launch through Spyder's public debugfile/IPython Console API
 - headless CLI
 - CI across Python 3.11-3.13 plus an offscreen Qt Spyder widget smoke test
-- tests and a small bookstore example
+- tests, a small bookstore example and a realistic data-platform demo client
 
-Inspect the example without Spyder:
+Inspect the bookstore example without Spyder:
 
 ```bash
 pip install -e ".[dev]"
 PYTHONPATH=examples/bookstore fastapi-spyder app:app
 ```
+
+## End-to-end demo client
+
+A more realistic fake client lives in
+`examples/data_platform_demo`. It is intentionally self-contained: no real
+PostgreSQL, Kafka or schema-registry service is required.
+
+It exercises the complete Studio path:
+
+```text
+FastAPI contract
+  -> Pydantic models
+  -> nested Depends()
+  -> static route-to-test links
+  -> Request Lab
+  -> Spyder debug server
+  -> native FastAPI traces/logs
+  -> observed DB / HTTP / messaging child spans
+  -> Telemetry timeline + waterfall
+  -> Diagram server/client overlays
+```
+
+Use `examples/data_platform_demo` as the Spyder working directory, discover
+`app:app`, start the debug server, then run:
+
+```bash
+python load.py
+```
+
+The generated local traffic includes successful requests, a 422 validation
+failure, a 404, a slow route, an intentional 500 and a background task. See
+`examples/data_platform_demo/README.md` for the expected trace shape.
 
 ## Route-to-test links
 
@@ -181,6 +215,12 @@ Spyder Telemetry tab
 The dashboard derives request count, error rate and latency percentiles from
 finished native HTTP server spans. It does not claim those aggregates are
 Prometheus/Grafana metrics.
+
+Other spans from the same OpenTelemetry trace are also kept. FastAPI Studio
+classifies common semantic-convention attributes as `database`,
+`http-client`, `messaging`, `rpc` or generic `external`. This is observed
+runtime evidence only: the Studio does not infer database or network calls from
+Python source.
 
 The JSONL file is temporary, local to the debug session and removed by the
 Studio lifecycle. Request bodies and FastAPI's local `TelemetryData` are not
