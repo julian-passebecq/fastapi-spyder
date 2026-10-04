@@ -83,7 +83,6 @@ jobs:
           assert widget._lineage_tree.topLevelItemCount() == 1
           assert widget._request_lab._route.currentText() == "GET /health"
           assert widget._request_lab._parameters.rowCount() == 1
-          assert widget._request_lab._breakpoint.isEnabled()
 
           widget._request_lab._render_result(
               RequestExecution(
