@@ -83,6 +83,41 @@ def _field_required(field: Any) -> bool:
     return False
 
 
+def _first_execution_line(
+    source_lines: list[str],
+    start_line: int,
+) -> int | None:
+    """Return the first executable statement inside a function body."""
+
+    try:
+        tree = ast.parse(textwrap.dedent("".join(source_lines)))
+    except SyntaxError:
+        return None
+
+    function_node = next(
+        (
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ),
+        None,
+    )
+    if function_node is None:
+        return None
+
+    for index, statement in enumerate(function_node.body):
+        if (
+            index == 0
+            and isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            continue
+        return start_line + int(getattr(statement, "lineno", 1)) - 1
+
+    return None
+
+
 def _source_ref(call: Callable[..., Any] | Any) -> SourceRef:
     if call is None:
         return SourceRef()
@@ -94,19 +129,23 @@ def _source_ref(call: Callable[..., Any] | Any) -> SourceRef:
 
     file_name: str | None = None
     line: int | None = None
+    execution_line: int | None = None
     try:
         file_name = inspect.getsourcefile(unwrapped) or inspect.getfile(unwrapped)
     except (TypeError, OSError):
         pass
 
     try:
-        _, line = inspect.getsourcelines(unwrapped)
+        source_lines, line = inspect.getsourcelines(unwrapped)
+        if inspect.isfunction(unwrapped) or inspect.ismethod(unwrapped):
+            execution_line = _first_execution_line(source_lines, line)
     except (TypeError, OSError):
         pass
 
     return SourceRef(
         file=file_name,
         line=line,
+        execution_line=execution_line,
         qualname=_callable_name(unwrapped),
     )
 
