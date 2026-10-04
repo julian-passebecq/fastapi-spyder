@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from qtpy.QtWidgets import QApplication
 from spyder.app.find_plugins import find_external_plugins
 from spyder.plugins.ipythonconsole.plugin import IPythonConsole
+import uvicorn
 
 from spyder_fastapi.core import NativeTelemetryStore, inspect_app
 from spyder_fastapi.models import RequestExecution
@@ -80,7 +81,9 @@ assert contract_issues == [], contract_issues
 assert variable_explorer_available()
 compatible, compatibility_message = FastAPIStudioPlugin.check_compatibility(None)
 assert compatible, compatibility_message
+assert uvicorn.__version__
 print("SPYDER_CONTRACT PASS")
+print(f"UVICORN_DEBUG_RUNTIME PASS version={uvicorn.__version__}")
 
 qt_app = QApplication.instance() or QApplication([])
 project_temp = TemporaryDirectory(prefix="FastAPI Studio ")
