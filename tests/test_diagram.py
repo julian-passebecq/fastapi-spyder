@@ -7,7 +7,7 @@ from spyder_fastapi.core import (
     inspect_app,
     route_projection,
 )
-from spyder_fastapi.models import RouteTestIndex, SourceRef, TestReference
+from spyder_fastapi.models import RouteTestIndex, SourceRef, RouteTestReference
 
 
 class ItemIn(BaseModel):
@@ -105,7 +105,7 @@ def _test_index() -> RouteTestIndex:
     return RouteTestIndex(
         scanned_files=1,
         references=[
-            TestReference(
+            RouteTestReference(
                 id="test:/tmp/test_items.py:10:POST:POST /items",
                 route_id="POST /items",
                 test_name="test_create_item",
@@ -118,7 +118,7 @@ def _test_index() -> RouteTestIndex:
                     qualname="test_create_item",
                 ),
             ),
-            TestReference(
+            RouteTestReference(
                 id="test:/tmp/test_items.py:20:GET:GET /items",
                 route_id="GET /items",
                 test_name="test_list_items",
