@@ -59,6 +59,7 @@ class FastAPIStudioWidget(PluginMainWidget):
     """FastAPI architecture and lineage explorer."""
 
     sig_open_source = Signal(str, int)
+    sig_set_breakpoint = Signal(str, int)
 
     def __init__(self, name=None, plugin=None, parent=None):
         super().__init__(name, plugin, parent)
@@ -269,6 +270,9 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._request_lab = RequestLabWidget()
         self._request_lab.sig_status.connect(self._status.setText)
         self._request_lab.sig_open_source.connect(self.sig_open_source.emit)
+        self._request_lab.sig_set_breakpoint.connect(
+            self.sig_set_breakpoint.emit
+        )
         self._request_lab.set_python_executable(self._python_executable)
         self._request_lab.set_working_directory(self._workdir)
         self._tabs.addTab(self._request_lab, "Request Lab")
@@ -314,6 +318,9 @@ class FastAPIStudioWidget(PluginMainWidget):
         if action is not None:
             layout.addWidget(action)
         return page
+
+    def set_status_message(self, message: str) -> None:
+        self._status.setText(message)
 
     # --- Project/app discovery
     # ------------------------------------------------------------------
