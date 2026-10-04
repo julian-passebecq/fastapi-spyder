@@ -108,6 +108,10 @@ The repository now contains the v0.1 foundation:
 - exact Pydantic field source mapping where inspectable
 - in-memory request history with redacted display and exact replay
 - observed Request Lab route timing/status overlay in the Diagram tab
+- native FastAPI OpenTelemetry dashboard for server traces and FastAPI logs
+- per-route request/error/average/P50/P95 summaries from native server spans
+- request trace tree with FastAPI dependency/endpoint/serialization spans
+- native latency timeline without Grafana, WebEngine or a separate frontend
 - Spyder-native handler breakpoint handoff using the first executable line
 - local uvicorn launch through Spyder's public debugfile/IPython Console API
 - headless CLI
@@ -146,6 +150,44 @@ FastAPI contract lineage. They can be overlaid on Route, Global and Impact
 diagrams with `route -> tested_by -> test function` edges.
 
 No test module is imported or executed during discovery.
+
+## Native FastAPI telemetry dashboard
+
+Current FastAPI versions provide native OpenTelemetry request traces and logs.
+FastAPI Studio attaches a local OpenTelemetry processor before the debug server
+imports the application, then renders that native telemetry directly in Spyder.
+
+The local path is intentionally small:
+
+```text
+FastAPI native telemetry
+        |
+        +-- HTTP server span
+        +-- fastapi.dependencies
+        +-- fastapi.endpoint
+        +-- fastapi.serialization
+        +-- fastapi.background_task
+        +-- validation / exception logs
+        |
+        v
+ephemeral JSONL bridge
+        |
+        v
+Spyder Telemetry tab
+```
+
+The dashboard derives request count, error rate and latency percentiles from
+finished native HTTP server spans. It does not claim those aggregates are
+Prometheus/Grafana metrics.
+
+The JSONL file is temporary, local to the debug session and removed by the
+Studio lifecycle. Request bodies and FastAPI's local `TelemetryData` are not
+persisted by this bridge. Exception tracebacks/messages are also deliberately
+not written to the JSONL sink.
+
+If the selected project uses a FastAPI version without native telemetry, the
+Telemetry tab reports that capability gap while the architecture, Request Lab
+and client-side timing features continue to work.
 
 ## Interactive architecture diagrams
 
@@ -252,24 +294,38 @@ Next:
 
 ### V0.4 - Observe locally
 
-Implemented first slice:
+Implemented:
 
 - route-level runtime evidence from real Request Lab executions
 - last / average / min / max end-to-end client elapsed time
 - last HTTP status and transport-error counts
-- optional runtime overlay on the same architecture diagram
-- explicit Clear runtime lifecycle
+- optional Request Lab runtime overlay on the architecture diagram
+- FastAPI's native OpenTelemetry tracing captured during Spyder debug launches
+- FastAPI native operation spans for dependency resolution, endpoint execution,
+  response serialization and background tasks
+- native FastAPI validation/error logs linked to traces when available
+- Telemetry dashboard with request/error KPIs, average/P50/P95, per-route
+  summaries, recent latency timeline and trace/waterfall tree
+- double-click route/trace -> corresponding architecture diagram
+- ephemeral local JSONL bridge with bounded in-memory ingestion
+- explicit clear lifecycle for both client and native telemetry
 
-Important: this first timing is **Request Lab client elapsed**, not server-only or
-handler latency.
+The two latency sources stay distinct:
+
+- **Request Lab client elapsed** = end-to-end local client observation;
+- **FastAPI native server span** = server-side OpenTelemetry request span.
+
+No Grafana, Prometheus, browser frontend or custom FastAPI middleware is needed
+for the local dashboard.
 
 Next:
 
-- request waterfall
-- per-dependency/handler latency
-- OpenTelemetry-based local traces
-- correlated errors/logs
-- optional export to an external observability backend
+- richer graphical trace-waterfall bars
+- project/vendor child spans (SQL/HTTP/etc.) when those libraries already emit
+  OpenTelemetry spans
+- optional native FastAPI metrics signal for active requests
+- exception -> source correlation
+- optional OTLP export remains compatible with external observability backends
 
 ## Non-goals
 
