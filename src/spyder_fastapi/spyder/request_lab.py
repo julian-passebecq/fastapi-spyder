@@ -73,6 +73,7 @@ class RequestLabWidget(QWidget):
     sig_set_breakpoint = Signal(str, int)
     sig_start_debug_server = Signal(str, str, str, int)
     sig_stop_debug_server = Signal()
+    sig_request_completed = Signal(str, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1079,6 +1080,11 @@ class RequestLabWidget(QWidget):
                 command=self._active_command,
                 route_id=self._active_route_id,
             )
+            if self._active_route_id is not None:
+                self.sig_request_completed.emit(
+                    self._active_route_id,
+                    result.model_copy(deep=True),
+                )
             if stderr:
                 self.sig_status.emit(
                     "Request completed with diagnostics; see Response."
