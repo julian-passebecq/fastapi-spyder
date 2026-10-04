@@ -958,7 +958,6 @@ class RequestLabWidget(QWidget):
         self._validation_summary.setText("Waiting for response...")
         self._send.setEnabled(False)
         self._replay_history.setEnabled(False)
-        self._update_debug_server_enabled()
 
         process = QProcess(self)
         process.setWorkingDirectory(self._workdir)
@@ -969,6 +968,7 @@ class RequestLabWidget(QWidget):
         process.errorOccurred.connect(self._request_process_error)
         process.finished.connect(self._request_finished)
         self._process = process
+        self._update_debug_server_enabled()
 
         process.start(
             self._python_executable,
@@ -1035,6 +1035,7 @@ class RequestLabWidget(QWidget):
             self._active_route_id = None
             process.deleteLater()
             self._process = None
+            self._update_debug_server_enabled()
 
         self.sig_status.emit(f"Request Lab process error: {message}")
 
