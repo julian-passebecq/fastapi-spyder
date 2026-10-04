@@ -99,6 +99,10 @@ The repository now contains the v0.1 foundation:
 - dependency and schema blast-radius views
 - serializable `FastAPIMap` JSON bridge
 - diagnostics view for import/inspection output
+- generated Request Lab for path/query/header/cookie inputs and JSON bodies
+- isolated HTTP execution with response status/body/timing
+- 422 validation visualizer with source navigation
+- exact Pydantic field source mapping where inspectable
 - headless CLI
 - CI across Python 3.11-3.13 plus an offscreen Qt Spyder widget smoke test
 - tests and a small bookstore example
@@ -141,10 +145,18 @@ Implemented:
 - conservative compatibility-risk candidates
 - Spyder Changes explorer with source navigation
 
+Implemented in the current branch:
+
+- generated request builder from FastAPI/OpenAPI contracts
+- dependency-derived auth/query/header inputs
+- JSON body examples from Pydantic/OpenAPI
+- isolated non-blocking request runner
+- 422 validation visualizer linked to model/dependency source
+
 Next:
 
-- 422 validation visualizer
-- request builder
+- request history and replay handoff
+- multipart/form support
 
 ### V0.3 - Debug requests
 
