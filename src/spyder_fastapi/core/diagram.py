@@ -43,29 +43,34 @@ def _test_nodes_for_routes(
     if test_index is None:
         return [], []
 
-    nodes: list[DiagramNode] = []
-    edges: list[DiagramEdge] = []
+    nodes: dict[str, DiagramNode] = {}
+    edges: dict[tuple[str, str, str], DiagramEdge] = {}
+
     for reference in test_index.references:
         if reference.route_id not in route_ids:
             continue
-        nodes.append(
+
+        file_name = reference.source.file or "<unknown>"
+        test_id = f"test-function:{file_name}:{reference.test_name}"
+        nodes.setdefault(
+            test_id,
             DiagramNode(
-                id=reference.id,
+                id=test_id,
                 kind="test",
                 label=reference.test_name,
                 source=reference.source,
                 route_id=reference.route_id,
-            )
-        )
-        edges.append(
-            DiagramEdge(
-                source=f"route:{reference.route_id}",
-                target=reference.id,
-                relation="tested_by",
-            )
+            ),
         )
 
-    return nodes, edges
+        edge = DiagramEdge(
+            source=f"route:{reference.route_id}",
+            target=test_id,
+            relation="tested_by",
+        )
+        edges[(edge.source, edge.target, edge.relation)] = edge
+
+    return list(nodes.values()), list(edges.values())
 
 
 def _edge(edge: LineageEdge) -> DiagramEdge:
