@@ -51,8 +51,10 @@ jobs:
         run: |
           python - <<'PY'
           from inspect import signature
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
 
-          from fastapi import Depends, FastAPI, Header
+          from fastapi import Depends, FastAPI, File, Form, Header, UploadFile
           from qtpy.QtWidgets import QApplication
           from spyder.plugins.ipythonconsole.plugin import IPythonConsole
 
@@ -70,6 +72,16 @@ jobs:
           def health(_token: str = Depends(auth)):
               return {"ok": True}
 
+          @before.post("/upload")
+          async def upload(
+              description: str = Form(),
+              document: UploadFile = File(),
+          ):
+              return {
+                  "description": description,
+                  "filename": document.filename,
+              }
+
           after = FastAPI(title="Smoke API")
 
           @after.get("/health")
@@ -86,11 +98,32 @@ jobs:
 
           assert FastAPIStudioPlugin.NAME == "fastapi_studio"
           assert "method" in signature(IPythonConsole.run_script).parameters
-          assert widget._routes_tree.topLevelItemCount() == 1
+          assert widget._routes_tree.topLevelItemCount() == 2
           assert widget._dependencies_tree.topLevelItemCount() == 1
           assert widget._lineage_tree.topLevelItemCount() == 1
           assert widget._request_lab._route.currentText() == "GET /health"
           assert widget._request_lab._parameters.rowCount() == 1
+
+          widget._request_lab.select_route("POST /upload")
+          assert widget._request_lab._body_fields.rowCount() == 2
+          with TemporaryDirectory() as temp_dir:
+              upload_path = Path(temp_dir) / "smoke.txt"
+              upload_path.write_text("smoke upload", encoding="utf-8")
+
+              for row in range(widget._request_lab._body_fields.rowCount()):
+                  kind = widget._request_lab._body_fields.item(row, 0).text()
+                  name = widget._request_lab._body_fields.item(row, 1).text()
+                  value = widget._request_lab._body_fields.item(row, 4)
+                  if name == "description":
+                      value.setText("smoke")
+                  elif kind == "file" and name == "document":
+                      value.setText(str(upload_path))
+
+              multipart_command = widget._request_lab._collect_command()
+              assert multipart_command["multipart"]["description"] == "smoke"
+              assert multipart_command["files"]["document"] == str(upload_path)
+
+          widget._request_lab.select_route("GET /health")
 
           debug_launches = []
           widget._request_lab.sig_start_debug_server.connect(
