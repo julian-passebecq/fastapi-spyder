@@ -17,7 +17,7 @@ from spyder_fastapi.models import (
 
 def _parameter_map(parameters) -> dict[tuple[str, str], dict[str, Any]]:
     return {
-        (parameter.location, parameter.name): {
+        (parameter.location, parameter.alias or parameter.name): {
             "type_name": parameter.type_name,
             "required": parameter.required,
         }
