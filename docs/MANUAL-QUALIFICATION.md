@@ -12,8 +12,9 @@ replace it with a toy app during qualification.
 
 When the current commit has a green **spyder-windows** job, do not manually
 repeat checks that CI already proves. The Windows job already validates package
-installation, Spyder plugin discovery, dependency health, demo tests, the
-cross-platform Qt widget smoke, native telemetry capture, observed DB/HTTP/
+installation, Spyder plugin discovery, dependency health, the explicit Spyder
+editor/debug API contract, native Variable Explorer availability, demo tests,
+the cross-platform Qt widget smoke, native telemetry capture, observed DB/HTTP/
 messaging lineage, Diagram -> Telemetry trace drilldown and offscreen visual
 captures.
 
@@ -60,7 +61,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\qualify-windows.ps1
 
 The launcher creates an isolated Python 3.12 qualification environment when
 needed, installs the Spyder/dev extras, runs `pip check`, verifies Spyder's
-external-plugin discovery, runs the realistic demo tests, writes
+external-plugin discovery, validates the editor/debug compatibility contract
+and native Variable Explorer availability, runs the realistic demo tests, writes
 `qualification-local/windows-manual.md` with the exact Git SHA and seven
 human-only verdicts, then opens Spyder directly in
 `examples/data_platform_demo`.
