@@ -45,6 +45,7 @@ _ROLE_SOURCE_LINE = Qt.UserRole + 2
 _ROLE_REQUIRED = Qt.UserRole + 3
 _ROLE_HISTORY_INDEX = Qt.UserRole + 4
 _ROLE_IS_FILE = Qt.UserRole + 5
+_ROLE_MULTIPLE = Qt.UserRole + 6
 
 
 def _source_text(source: SourceRef | None) -> str:
@@ -510,6 +511,7 @@ class RequestLabWidget(QWidget):
 
             kind_item.setData(_ROLE_REQUIRED, field.required)
             kind_item.setData(_ROLE_IS_FILE, field.is_file)
+            kind_item.setData(_ROLE_MULTIPLE, field.multiple)
             if field.source is not None and field.source.file:
                 kind_item.setData(_ROLE_SOURCE_FILE, field.source.file)
                 kind_item.setData(_ROLE_SOURCE_LINE, field.source.line or 1)
@@ -520,6 +522,11 @@ class RequestLabWidget(QWidget):
                 has_file = True
                 value_item.setToolTip(
                     "Enter a local file path or select this row and use Browse."
+                    + (
+                        " For multiple files, use one path per line."
+                        if field.multiple
+                        else ""
+                    )
                 )
 
             self._body_fields.setItem(row, 0, kind_item)
@@ -541,19 +548,31 @@ class RequestLabWidget(QWidget):
             self.sig_status.emit("The selected multipart row is not a file field.")
             return
 
-        path, _selected_filter = QFileDialog.getOpenFileName(
-            self,
-            "Select multipart upload file",
-            self._workdir,
-        )
-        if not path:
-            return
+        multiple = bool(kind_item.data(_ROLE_MULTIPLE))
+        if multiple:
+            paths, _selected_filter = QFileDialog.getOpenFileNames(
+                self,
+                "Select multipart upload files",
+                self._workdir,
+            )
+            if not paths:
+                return
+            value = "\n".join(paths)
+        else:
+            path, _selected_filter = QFileDialog.getOpenFileName(
+                self,
+                "Select multipart upload file",
+                self._workdir,
+            )
+            if not path:
+                return
+            value = path
 
         value_item = self._body_fields.item(row, 4)
         if value_item is None:
             value_item = QTableWidgetItem()
             self._body_fields.setItem(row, 4, value_item)
-        value_item.setText(path)
+        value_item.setText(value)
 
     def _reset_body_example(self) -> None:
         if self._template is None or self._template.body_example is None:
@@ -724,6 +743,7 @@ class RequestLabWidget(QWidget):
                 value = value_item.text().strip() if value_item is not None else ""
                 required = bool(kind_item.data(_ROLE_REQUIRED))
                 is_file = bool(kind_item.data(_ROLE_IS_FILE))
+                multiple = bool(kind_item.data(_ROLE_MULTIPLE))
 
                 if not value:
                     if required:
@@ -732,7 +752,19 @@ class RequestLabWidget(QWidget):
                     continue
 
                 if is_file:
-                    files[name] = value
+                    if multiple:
+                        paths = [
+                            item.strip()
+                            for item in value.splitlines()
+                            if item.strip()
+                        ]
+                        if required and not paths:
+                            raise ValueError(
+                                f"Required file list is empty: {name}"
+                            )
+                        files[name] = paths
+                    else:
+                        files[name] = value
                 else:
                     values[name] = value
 
