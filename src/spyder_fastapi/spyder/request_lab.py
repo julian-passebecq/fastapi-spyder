@@ -414,6 +414,11 @@ class RequestLabWidget(QWidget):
             required_item = QTableWidgetItem("yes" if field.required else "no")
             value_item = QTableWidgetItem(_value_text(field.example))
 
+            if field.python_name and field.python_name != field.name:
+                name_item.setToolTip(
+                    f"Python parameter: {field.python_name}"
+                )
+
             for item in (location_item, name_item, type_item, required_item):
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
 
