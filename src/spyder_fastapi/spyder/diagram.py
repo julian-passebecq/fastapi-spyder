@@ -94,7 +94,7 @@ class FastAPIDiagramWidget(QWidget):
     """Interactive projections of FastAPI contract/dependency lineage."""
 
     sig_open_source = Signal(str, int)
-    sig_open_telemetry = Signal(str)
+    sig_open_telemetry = Signal(str, str)
     sig_clear_runtime = Signal()
 
     def __init__(self, parent=None):
@@ -898,7 +898,10 @@ class FastAPIDiagramWidget(QWidget):
             return
 
         if node.evidence == "runtime" and node.route_id:
-            self.sig_open_telemetry.emit(node.route_id)
+            self.sig_open_telemetry.emit(
+                node.route_id,
+                node.trace_id or "",
+            )
             return
 
         if node.source is None or not node.source.file:
