@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import inspect
+import textwrap
 from collections.abc import Callable
 from typing import Any, get_args
 
@@ -109,9 +111,57 @@ def _source_ref(call: Callable[..., Any] | Any) -> SourceRef:
     )
 
 
+def _model_field_sources(model: type[BaseModel]) -> dict[str, SourceRef]:
+    """Map Pydantic fields to their class-body source lines when inspectable."""
+
+    try:
+        file_name = inspect.getsourcefile(model) or inspect.getfile(model)
+        source_lines, start_line = inspect.getsourcelines(model)
+    except (TypeError, OSError):
+        return {}
+
+    try:
+        tree = ast.parse(textwrap.dedent("".join(source_lines)))
+    except SyntaxError:
+        return {}
+
+    class_node = next(
+        (node for node in tree.body if isinstance(node, ast.ClassDef)),
+        None,
+    )
+    if class_node is None:
+        return {}
+
+    model_fields = set(model.model_fields)
+    result: dict[str, SourceRef] = {}
+
+    for node in class_node.body:
+        names: list[str] = []
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names = [node.target.id]
+        elif isinstance(node, ast.Assign):
+            names = [
+                target.id
+                for target in node.targets
+                if isinstance(target, ast.Name)
+            ]
+
+        for name in names:
+            if name not in model_fields:
+                continue
+            result[name] = SourceRef(
+                file=file_name,
+                line=start_line + int(getattr(node, "lineno", 1)) - 1,
+                qualname=f"{_callable_name(model)}.{name}",
+            )
+
+    return result
+
+
 def _register_model_type(
     value: Any,
     registry: dict[str, SourceRef],
+    field_registry: dict[str, dict[str, SourceRef]],
     seen: set[int] | None = None,
 ) -> None:
     """Record Pydantic model classes reachable from a type annotation."""
@@ -128,7 +178,7 @@ def _register_model_type(
     seen.add(marker)
 
     for argument in get_args(value):
-        _register_model_type(argument, registry, seen)
+        _register_model_type(argument, registry, field_registry, seen)
 
     if not inspect.isclass(value):
         return
@@ -142,8 +192,9 @@ def _register_model_type(
         return
 
     registry.setdefault(value.__name__, _source_ref(value))
+    field_registry.setdefault(value.__name__, _model_field_sources(value))
     for field in value.model_fields.values():
-        _register_model_type(field.annotation, registry, seen)
+        _register_model_type(field.annotation, registry, field_registry, seen)
 
 
 def _dependency_id(call: Any) -> str:
@@ -169,16 +220,28 @@ def _walk_dependency(
     dependant: Any,
     registry: dict[str, DependencySpec],
     model_sources: dict[str, SourceRef],
+    model_field_sources: dict[str, dict[str, SourceRef]],
 ) -> str:
     call = getattr(dependant, "call", None)
     dep_id = _dependency_id(call)
 
     children: list[str] = []
     for field in getattr(dependant, "body_params", ()):
-        _register_model_type(_field_type(field), model_sources)
+        _register_model_type(
+            _field_type(field),
+            model_sources,
+            model_field_sources,
+        )
 
     for child in getattr(dependant, "dependencies", ()):
-        children.append(_walk_dependency(child, registry, model_sources))
+        children.append(
+            _walk_dependency(
+                child,
+                registry,
+                model_sources,
+                model_field_sources,
+            )
+        )
 
     registry[dep_id] = DependencySpec(
         id=dep_id,
@@ -362,6 +425,7 @@ def inspect_app(app: FastAPI) -> FastAPIMap:
 
     dependency_registry: dict[str, DependencySpec] = {}
     model_sources: dict[str, SourceRef] = {}
+    model_field_sources: dict[str, dict[str, SourceRef]] = {}
     routes: list[RouteSpec] = []
     lineage_parts: list[LineageGraph] = []
 
@@ -370,12 +434,21 @@ def inspect_app(app: FastAPI) -> FastAPIMap:
 
     for route in api_routes:
         root_dependencies = [
-            _walk_dependency(dependant, dependency_registry, model_sources)
+            _walk_dependency(
+                dependant,
+                dependency_registry,
+                model_sources,
+                model_field_sources,
+            )
             for dependant in route.dependant.dependencies
         ]
 
         for field in getattr(route.dependant, "body_params", ()):
-            _register_model_type(_field_type(field), model_sources)
+            _register_model_type(
+            _field_type(field),
+            model_sources,
+            model_field_sources,
+        )
         _register_model_type(route.response_model, model_sources)
 
         methods = sorted(route.methods or {"GET"})
@@ -410,6 +483,7 @@ def inspect_app(app: FastAPI) -> FastAPIMap:
         ModelSpec(
             name=name,
             source=model_sources.get(name),
+            field_sources=model_field_sources.get(name, {}),
             schema=schema,
         )
         for name, schema in sorted(schema_definitions.items())
