@@ -103,6 +103,25 @@ jobs:
           )
           assert widget._request_lab._validation.topLevelItemCount() == 1
 
+          widget._request_lab._record_history(
+              RequestExecution(
+                  url="http://127.0.0.1:8000/health",
+                  status_code=200,
+                  reason="OK",
+                  json_body={"ok": True},
+                  elapsed_ms=2.5,
+              ),
+              command={
+                  "method": "GET",
+                  "base_url": "http://127.0.0.1:8000",
+                  "path": "/health",
+                  "headers": {"Authorization": "Bearer secret"},
+              },
+              route_id="GET /health",
+          )
+          assert widget._request_lab._history_tree.topLevelItemCount() == 1
+          assert "***" in widget._request_lab._history_details.toPlainText()
+
           widget.set_baseline()
           widget.set_api_map(inspect_app(after))
           assert widget._changes_tree.topLevelItemCount() >= 1
