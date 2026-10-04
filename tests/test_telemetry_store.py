@@ -106,8 +106,8 @@ def test_native_telemetry_store_keeps_operation_spans_in_trace():
 
     spans = store.trace_spans(trace_id)
     assert [span.name for span in spans] == [
-        "fastapi.dependencies",
         "GET /me",
+        "fastapi.dependencies",
     ]
     assert store.trace_root(trace_id).name == "GET /me"
     assert store.trace_ids() == [trace_id]
