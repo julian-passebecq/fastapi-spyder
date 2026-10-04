@@ -12,6 +12,7 @@ from spyder_fastapi.models import (
     FastAPIMap,
     LineageEdge,
     LineageNode,
+    RouteTestIndex,
 )
 
 
@@ -35,6 +36,38 @@ def _diagram_node(
     )
 
 
+def _test_nodes_for_routes(
+    test_index: RouteTestIndex | None,
+    route_ids: set[str],
+) -> tuple[list[DiagramNode], list[DiagramEdge]]:
+    if test_index is None:
+        return [], []
+
+    nodes: list[DiagramNode] = []
+    edges: list[DiagramEdge] = []
+    for reference in test_index.references:
+        if reference.route_id not in route_ids:
+            continue
+        nodes.append(
+            DiagramNode(
+                id=reference.id,
+                kind="test",
+                label=reference.test_name,
+                source=reference.source,
+                route_id=reference.route_id,
+            )
+        )
+        edges.append(
+            DiagramEdge(
+                source=f"route:{reference.route_id}",
+                target=reference.id,
+                relation="tested_by",
+            )
+        )
+
+    return nodes, edges
+
+
 def _edge(edge: LineageEdge) -> DiagramEdge:
     return DiagramEdge(
         source=edge.source,
@@ -43,7 +76,13 @@ def _edge(edge: LineageEdge) -> DiagramEdge:
     )
 
 
-def route_projection(api_map: FastAPIMap, route_id: str) -> DiagramProjection:
+def route_projection(
+    api_map: FastAPIMap,
+    route_id: str,
+    test_index: RouteTestIndex | None = None,
+    *,
+    include_tests: bool = False,
+) -> DiagramProjection:
     """Project one route and every lineage node reachable from it."""
 
     root_id = f"route:{route_id}"
@@ -75,6 +114,14 @@ def route_projection(api_map: FastAPIMap, route_id: str) -> DiagramProjection:
         if edge.source in reachable and edge.target in reachable
     ]
 
+    if include_tests:
+        test_nodes, test_edges = _test_nodes_for_routes(
+            test_index,
+            {route_id},
+        )
+        nodes.extend(test_nodes)
+        edges.extend(test_edges)
+
     return DiagramProjection(
         mode="route",
         title=route_id,
@@ -88,7 +135,12 @@ def route_projection(api_map: FastAPIMap, route_id: str) -> DiagramProjection:
     )
 
 
-def global_projection(api_map: FastAPIMap) -> DiagramProjection:
+def global_projection(
+    api_map: FastAPIMap,
+    test_index: RouteTestIndex | None = None,
+    *,
+    include_tests: bool = False,
+) -> DiagramProjection:
     """Compact the whole API into routes, handlers, dependencies and models.
 
     Request parameter nodes are intentionally contracted. Body/model edges are
@@ -152,6 +204,19 @@ def global_projection(api_map: FastAPIMap) -> DiagramProjection:
         if node.kind == "route"
     )
 
+    if include_tests:
+        test_nodes, test_edges = _test_nodes_for_routes(
+            test_index,
+            {
+                node.route_id
+                for node in api_map.lineage.nodes
+                if node.kind == "route" and node.route_id is not None
+            },
+        )
+        nodes.extend(test_nodes)
+        for edge in test_edges:
+            edges[(edge.source, edge.target, edge.relation)] = edge
+
     return DiagramProjection(
         mode="global",
         title=api_map.title,
@@ -167,6 +232,9 @@ def global_projection(api_map: FastAPIMap) -> DiagramProjection:
 def impact_projection(
     api_map: FastAPIMap,
     node_id: str,
+    test_index: RouteTestIndex | None = None,
+    *,
+    include_tests: bool = False,
 ) -> DiagramProjection:
     """Project only real lineage paths from impacted routes to one node."""
 
@@ -228,6 +296,20 @@ def impact_projection(
         for current in selected_nodes
         if current in nodes_by_id
     ]
+
+    if include_tests:
+        impacted_route_ids = {
+            nodes_by_id[root].route_id
+            for root in roots
+            if root in nodes_by_id and nodes_by_id[root].route_id is not None
+        }
+        test_nodes, test_edges = _test_nodes_for_routes(
+            test_index,
+            impacted_route_ids,
+        )
+        nodes.extend(test_nodes)
+        for edge in test_edges:
+            selected_edges[(edge.source, edge.target, edge.relation)] = edge
 
     return DiagramProjection(
         mode="impact",
