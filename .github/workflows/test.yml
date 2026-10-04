@@ -148,6 +148,13 @@ jobs:
           assert widget._telemetry._routes.topLevelItemCount() == 1
           assert "LIVE" in widget._telemetry._status.text()
 
+          assert widget._telemetry._validation._value.text() == "1"
+          assert widget._telemetry._exceptions._value.text() == "0"
+          assert widget._telemetry._waterfall._rows
+          native_summary = widget._diagram._native_route_summaries["GET /health"]
+          assert native_summary.request_count == 2
+          assert native_summary.validation_failure_count == 1
+
           assert FastAPIStudioPlugin.NAME == "fastapi_studio"
           assert "method" in signature(IPythonConsole.run_script).parameters
           assert widget._routes_tree.topLevelItemCount() == 2
