@@ -121,3 +121,20 @@ def test_request_template_detects_non_json_body_media_type():
 
     assert template.body_required is True
     assert template.body_content_type == "text/plain"
+
+
+def test_request_template_uses_openapi_path_format_for_path_converters():
+    app = FastAPI(title="Path API")
+
+    @app.get("/files/{file_path:path}")
+    def read_file(file_path: str):
+        return {"file_path": file_path}
+
+    api_map = inspect_app(app)
+
+    assert [route.id for route in api_map.routes] == ["GET /files/{file_path}"]
+    template = build_request_template(api_map, "GET /files/{file_path}")
+    assert template.path == "/files/{file_path}"
+    assert [(field.location, field.name) for field in template.parameters] == [
+        ("path", "file_path")
+    ]
