@@ -221,12 +221,14 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
     for parameter in route.parameters:
         if parameter.location == "body":
             continue
-        key = (parameter.location, parameter.name)
+        public_name = parameter.alias or parameter.name
+        key = (parameter.location, public_name)
         seen.add(key)
         details = metadata.get(key, {})
         fields.append(
             RequestField(
-                name=parameter.name,
+                name=public_name,
+                python_name=parameter.name,
                 location=parameter.location,
                 type_name=parameter.type_name,
                 required=parameter.required,
@@ -239,14 +241,16 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
     for parameter, source in _dependency_parameters(api_map, route.dependencies):
         if parameter.location == "body":
             continue
-        key = (parameter.location, parameter.name)
+        public_name = parameter.alias or parameter.name
+        key = (parameter.location, public_name)
         if key in seen:
             continue
         seen.add(key)
         details = metadata.get(key, {})
         fields.append(
             RequestField(
-                name=parameter.name,
+                name=public_name,
+                python_name=parameter.name,
                 location=parameter.location,
                 type_name=parameter.type_name,
                 required=parameter.required,
@@ -336,11 +340,17 @@ def _parameter_source_and_type(
         return route.source, expected_type
 
     for parameter in route.parameters:
-        if parameter.location == location and parameter.name == name:
+        if (
+            parameter.location == location
+            and name in {parameter.name, parameter.alias or parameter.name}
+        ):
             return route.source, parameter.type_name
 
     for parameter, source in _dependency_parameters(api_map, route.dependencies):
-        if parameter.location == location and parameter.name == name:
+        if (
+            parameter.location == location
+            and name in {parameter.name, parameter.alias or parameter.name}
+        ):
             return source, parameter.type_name
 
     return route.source, None
