@@ -104,6 +104,7 @@ The repository now contains the v0.1 foundation:
 - 422 validation visualizer with source navigation
 - exact Pydantic field source mapping where inspectable
 - in-memory request history with redacted display and exact replay
+- Spyder-native handler breakpoint handoff using the first executable line
 - headless CLI
 - CI across Python 3.11-3.13 plus an offscreen Qt Spyder widget smoke test
 - tests and a small bookstore example
@@ -164,10 +165,11 @@ Implemented foundation:
 
 - in-memory request history
 - exact request replay
+- handler breakpoint handoff to Spyder's existing debugger
 
 Next:
 
-- replay + Spyder breakpoint
+- one-click debug-session/server lifecycle + replay
 - exception -> source navigation
 - Variable Explorer integration
 
