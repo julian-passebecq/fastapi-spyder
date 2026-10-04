@@ -124,3 +124,27 @@ class FastAPIMap(BaseModel):
     dependencies: list[DependencySpec]
     models: list[ModelSpec]
     lineage: LineageGraph
+
+ChangeEntity = Literal["route", "model", "dependency"]
+ChangeKind = Literal["added", "removed", "changed"]
+
+
+class SemanticChange(BaseModel):
+    """One meaningful contract or architecture change between two snapshots."""
+
+    entity: ChangeEntity
+    name: str
+    kind: ChangeKind
+    fields: list[str] = Field(default_factory=list)
+    affected_routes: list[str] = Field(default_factory=list)
+    breaking_reasons: list[str] = Field(default_factory=list)
+    source: SourceRef | None = None
+
+
+class APIDiff(BaseModel):
+    """Semantic difference between two FastAPI architecture snapshots."""
+
+    changes: list[SemanticChange] = Field(default_factory=list)
+    affected_routes: list[str] = Field(default_factory=list)
+    breaking_candidates: int = 0
+
