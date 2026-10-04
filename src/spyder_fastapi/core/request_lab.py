@@ -318,6 +318,12 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
         key = (parameter.location, public_name)
         seen.add(key)
         details = metadata.get(key, {})
+        parameter_schema = details.get("schema")
+        multiple = (
+            parameter.location == "query"
+            and isinstance(parameter_schema, dict)
+            and parameter_schema.get("type") == "array"
+        )
         fields.append(
             RequestField(
                 name=public_name,
@@ -328,6 +334,7 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
                 example=_example_from_parameter(details),
                 description=details.get("description"),
                 source=route.source,
+                multiple=multiple,
             )
         )
 
@@ -340,6 +347,12 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
             continue
         seen.add(key)
         details = metadata.get(key, {})
+        parameter_schema = details.get("schema")
+        multiple = (
+            parameter.location == "query"
+            and isinstance(parameter_schema, dict)
+            and parameter_schema.get("type") == "array"
+        )
         fields.append(
             RequestField(
                 name=public_name,
@@ -350,6 +363,7 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
                 example=_example_from_parameter(details),
                 description=details.get("description"),
                 source=source,
+                multiple=multiple,
             )
         )
 
