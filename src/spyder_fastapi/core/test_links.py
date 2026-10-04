@@ -96,12 +96,38 @@ def _keyword_value(call: ast.Call, name: str) -> ast.AST | None:
     return None
 
 
+def _clientish_receiver(node: ast.AST) -> bool:
+    """Avoid treating arbitrary dict.get('/route') calls as HTTP tests."""
+
+    if isinstance(node, ast.Name):
+        name = node.id.casefold()
+        return "client" in name or name in {"ac", "api", "http"}
+
+    if isinstance(node, ast.Attribute):
+        name = node.attr.casefold()
+        if "client" in name:
+            return True
+        return _clientish_receiver(node.value)
+
+    if isinstance(node, ast.Call):
+        function = node.func
+        if isinstance(function, ast.Name):
+            return function.id.casefold() in {"testclient", "asyncclient", "client"}
+        if isinstance(function, ast.Attribute):
+            return function.attr.casefold() in {"testclient", "asyncclient", "client"}
+
+    return False
+
+
 def _request_call(call: ast.Call) -> tuple[str, str] | None:
     function = call.func
     if not isinstance(function, ast.Attribute):
         return None
 
     method_name = function.attr.casefold()
+
+    if not _clientish_receiver(function.value):
+        return None
 
     if method_name in _HTTP_METHODS:
         path_node = (
