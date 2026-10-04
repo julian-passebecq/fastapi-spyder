@@ -175,6 +175,7 @@ class RequestField(BaseModel):
     description: str | None = None
     source: SourceRef | None = None
     is_file: bool = False
+    multiple: bool = False
     media_type: str | None = None
 
 
