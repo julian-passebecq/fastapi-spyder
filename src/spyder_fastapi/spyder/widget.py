@@ -60,6 +60,7 @@ class FastAPIStudioWidget(PluginMainWidget):
 
     sig_open_source = Signal(str, int)
     sig_set_breakpoint = Signal(str, int)
+    sig_start_debug_server = Signal(str, str, str, int)
 
     def __init__(self, name=None, plugin=None, parent=None):
         super().__init__(name, plugin, parent)
@@ -273,6 +274,9 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._request_lab.sig_set_breakpoint.connect(
             self.sig_set_breakpoint.emit
         )
+        self._request_lab.sig_start_debug_server.connect(
+            self.sig_start_debug_server.emit
+        )
         self._request_lab.set_python_executable(self._python_executable)
         self._request_lab.set_working_directory(self._workdir)
         self._tabs.addTab(self._request_lab, "Request Lab")
@@ -321,6 +325,9 @@ class FastAPIStudioWidget(PluginMainWidget):
 
     def set_status_message(self, message: str) -> None:
         self._status.setText(message)
+
+    def set_debug_server_available(self, available: bool) -> None:
+        self._request_lab.set_debug_server_available(available)
 
     def shutdown(self) -> None:
         """Terminate child processes owned by FastAPI Studio."""
@@ -500,6 +507,11 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._populate_dependencies()
         self._populate_lineage_routes()
         self._request_lab.set_api_map(api_map)
+        self._request_lab.set_app_target(
+            self._loaded_target
+            or self._target.currentText().strip()
+            or None
+        )
         self._openapi_view.setPlainText(
             json.dumps(api_map.openapi, indent=2, sort_keys=True)
         )
