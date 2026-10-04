@@ -88,10 +88,11 @@ The Spyder pane also inspects applications in a **separate Python subprocess**. 
 The repository now contains the v0.1 foundation:
 
 - safe AST-based FastAPI app discovery (no project import)
-- subprocess-based application inspection
+- subprocess-based application inspection using Spyder's selected Python interpreter
 - API route tree with route details
 - path/query/header/cookie/body parameter extraction
-- Pydantic/OpenAPI schema browser
+- Pydantic/OpenAPI schema browser with model source navigation
+- raw OpenAPI view alongside the normalized FastAPI map
 - recursive `Depends()` discovery, including dependency request parameters
 - Python source file + line mapping and double-click editor navigation
 - route-scoped lineage tree
@@ -126,8 +127,6 @@ Implemented in the bootstrap branch:
 
 Remaining before calling V0.1 complete:
 
-- raw OpenAPI side-by-side view
-- richer model source mapping
 - route/model search and filters
 - polished empty/error/loading states
 
