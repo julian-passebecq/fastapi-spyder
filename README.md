@@ -154,7 +154,15 @@ python tests\smoke_spyder_widget.py
 ```
 
 Headless CI cannot certify visual ergonomics or a real editor/debugger
-interaction. The reproducible manual acceptance flow is documented in
+interaction. On Windows, start the reproducible user qualification with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\qualify-windows.ps1
+```
+
+That command verifies the environment and demo first, writes a local evidence
+sheet tied to the exact Git SHA, and launches Spyder in the realistic demo
+project. The full acceptance flow is documented in
 `docs/MANUAL-QUALIFICATION.md`.
 
 ## End-to-end demo client
