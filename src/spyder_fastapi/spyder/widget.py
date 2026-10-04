@@ -110,7 +110,7 @@ class FastAPIStudioWidget(PluginMainWidget):
 
         self._routes_tree = QTreeWidget()
         self._routes_tree.setHeaderLabels(["Method", "Path"])
-        self._routes_tree.setRootIsDecorated(False)
+        self._routes_tree.setRootIsDecorated(True)
         self._routes_tree.currentItemChanged.connect(self._route_selected)
         self._routes_tree.itemDoubleClicked.connect(self._open_tree_item_source)
         self._route_details = QPlainTextEdit()
@@ -253,8 +253,8 @@ class FastAPIStudioWidget(PluginMainWidget):
             return
 
         if self._process is not None:
-            self._process.kill()
-            self._process.deleteLater()
+            self._status.setText("An inspection is already running.")
+            return
 
         self._stdout_chunks = []
         self._stderr_chunks = []
@@ -299,33 +299,39 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._diagnostics.appendPlainText(text.rstrip())
 
     def _inspection_finished(self, exit_code: int, _exit_status) -> None:
+        process = self._process
         self._inspect_button.setEnabled(True)
         stdout = "".join(self._stdout_chunks).strip()
         stderr = "".join(self._stderr_chunks).strip()
 
-        if exit_code != 0:
-            self._status.setText(
-                f"Inspection failed with exit code {exit_code}. See Diagnostics."
-            )
+        try:
+            if exit_code != 0:
+                self._status.setText(
+                    f"Inspection failed with exit code {exit_code}. See Diagnostics."
+                )
+                if stderr:
+                    self._status.setToolTip(stderr)
+                return
+
+            try:
+                payload = json.loads(stdout)
+                api_map = FastAPIMap.model_validate(payload)
+            except (json.JSONDecodeError, ValueError) as exc:
+                self._status.setText(
+                    "Inspector returned invalid JSON. See Diagnostics for details."
+                )
+                self._diagnostics.appendPlainText(
+                    f"\nJSON parse error: {exc}\n{stdout}"
+                )
+                return
+
+            self.set_api_map(api_map)
             if stderr:
                 self._status.setToolTip(stderr)
-            return
-
-        try:
-            payload = json.loads(stdout)
-            api_map = FastAPIMap.model_validate(payload)
-        except (json.JSONDecodeError, ValueError) as exc:
-            self._status.setText(
-                "Inspector returned invalid JSON. See Diagnostics for details."
-            )
-            self._diagnostics.appendPlainText(f"\nJSON parse error: {exc}\n{stdout}")
-            return
-
-        self.set_api_map(api_map)
-        if stderr:
-            self._status.setToolTip(stderr)
-        self._process.deleteLater()
-        self._process = None
+        finally:
+            if process is not None:
+                process.deleteLater()
+            self._process = None
 
     # --- Rendering
     # ------------------------------------------------------------------
@@ -389,16 +395,31 @@ class FastAPIStudioWidget(PluginMainWidget):
         if self._api_map is None:
             return
 
+        by_path = defaultdict(list)
         for route in self._api_map.routes:
-            item = QTreeWidgetItem([route.method, route.path])
-            item.setData(0, _ROLE_ID, route.id)
-            self._set_item_source(item, route.source)
-            item.setToolTip(1, route.handler)
-            self._routes_tree.addTopLevelItem(item)
+            by_path[route.path].append(route)
+
+        first_route_item = None
+        for path in sorted(by_path):
+            path_item = QTreeWidgetItem(["", path])
+            path_item.setToolTip(1, "HTTP path")
+            self._routes_tree.addTopLevelItem(path_item)
+
+            for route in sorted(by_path[path], key=lambda candidate: candidate.method):
+                item = QTreeWidgetItem([route.method, _short_name(route.handler)])
+                item.setData(0, _ROLE_ID, route.id)
+                self._set_item_source(item, route.source)
+                item.setToolTip(1, route.handler)
+                path_item.addChild(item)
+                if first_route_item is None:
+                    first_route_item = item
+
+            path_item.setExpanded(True)
 
         self._routes_tree.resizeColumnToContents(0)
-        if self._routes_tree.topLevelItemCount():
-            self._routes_tree.setCurrentItem(self._routes_tree.topLevelItem(0))
+        self._routes_tree.resizeColumnToContents(1)
+        if first_route_item is not None:
+            self._routes_tree.setCurrentItem(first_route_item)
 
     def _route_selected(self, item: QTreeWidgetItem | None, _previous) -> None:
         if item is None or self._api_map is None:
@@ -411,6 +432,7 @@ class FastAPIStudioWidget(PluginMainWidget):
             None,
         )
         if route is None:
+            self._route_details.clear()
             return
 
         dependencies_by_id = {
