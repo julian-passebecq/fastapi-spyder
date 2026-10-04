@@ -125,6 +125,19 @@ class NativeTelemetryStore:
             if route_id is not None:
                 grouped[route_id].append(span)
 
+        validation_by_route: dict[str, int] = defaultdict(int)
+        for log in self.logs:
+            if log.event_name != "fastapi.validation.failed":
+                continue
+            route = log.attributes.get("http.route")
+            if not isinstance(route, str) or not route:
+                continue
+            # Validation logs do not carry the HTTP method. Match them to the
+            # route summaries by path without turning 422 into a server error.
+            for route_id in grouped:
+                if route_id.endswith(f" {route}"):
+                    validation_by_route[route_id] += 1
+
         summaries: list[NativeRouteTelemetry] = []
         for route_id, spans in grouped.items():
             spans = sorted(spans, key=lambda span: span.end_ns)
@@ -145,6 +158,10 @@ class NativeTelemetryStore:
                     request_count=len(spans),
                     error_count=len(errors),
                     error_rate=(len(errors) / len(spans)) if spans else 0.0,
+                    validation_failure_count=validation_by_route.get(
+                        route_id,
+                        0,
+                    ),
                     average_ms=sum(durations) / len(durations),
                     p50_ms=_percentile(durations, 0.50),
                     p95_ms=_percentile(durations, 0.95),
@@ -180,6 +197,24 @@ class NativeTelemetryStore:
     def error_rate(self) -> float:
         total = self.total_requests()
         return self.error_count() / total if total else 0.0
+
+    def validation_failure_count(self) -> int:
+        return sum(
+            1
+            for log in self.logs
+            if log.event_name == "fastapi.validation.failed"
+        )
+
+    def exception_count(self) -> int:
+        return sum(
+            1
+            for log in self.logs
+            if log.event_name
+            in {
+                "http.server.request.exception",
+                "fastapi.websocket.exception",
+            }
+        )
 
     def latency_percentile(self, percentile: float) -> float | None:
         return _percentile(
