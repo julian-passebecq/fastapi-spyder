@@ -53,8 +53,30 @@ def test_inspection_extracts_contract_source_and_lineage():
     assert any(name.endswith(".db") for name in dependency_names)
     assert any(name.endswith(".auth") for name in dependency_names)
 
+    auth_dependency = next(
+        dependency
+        for dependency in result.dependencies
+        if dependency.name.endswith(".auth")
+    )
+    assert [
+        (parameter.location, parameter.name)
+        for parameter in auth_dependency.parameters
+    ] == [("header", "authorization")]
+
     edge_relations = {edge.relation for edge in result.lineage.edges}
     assert {"accepts", "validates_as", "depends_on", "handled_by", "returns"} <= edge_relations
+
+    header_node = next(
+        node
+        for node in result.lineage.nodes
+        if node.kind == "parameter" and node.label == "header:authorization"
+    )
+    assert any(
+        edge.source == auth_dependency.id
+        and edge.target == header_node.id
+        and edge.relation == "accepts"
+        for edge in result.lineage.edges
+    )
 
     model_names = {model.name for model in result.models}
     assert {"ItemIn", "ItemOut"} <= model_names
