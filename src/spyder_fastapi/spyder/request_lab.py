@@ -1185,21 +1185,50 @@ class RequestLabWidget(QWidget):
     @staticmethod
     def _redacted_command(command: dict) -> dict:
         display = json.loads(json.dumps(command))
+        sensitive_markers = (
+            "authorization",
+            "api-key",
+            "apikey",
+            "token",
+            "secret",
+            "password",
+            "passwd",
+            "credential",
+        )
 
-        headers = display.get("headers")
-        if isinstance(headers, dict):
-            for key in list(headers):
-                lowered = key.casefold()
-                if any(
-                    marker in lowered
-                    for marker in ("authorization", "api-key", "apikey", "token", "secret")
-                ):
-                    headers[key] = "***"
+        def redact_mapping(mapping: dict, *, redact_all: bool = False) -> None:
+            for key in list(mapping):
+                value = mapping[key]
+                lowered = str(key).casefold()
+                if redact_all or any(marker in lowered for marker in sensitive_markers):
+                    mapping[key] = "***"
+                elif isinstance(value, dict):
+                    redact_mapping(value)
+                elif isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, dict):
+                            redact_mapping(item)
+
+        for bucket_name in ("headers", "query", "form", "multipart"):
+            bucket = display.get(bucket_name)
+            if isinstance(bucket, dict):
+                redact_mapping(bucket)
+
+        body = display.get("body")
+        if isinstance(body, dict):
+            redact_mapping(body)
 
         cookies = display.get("cookies")
         if isinstance(cookies, dict):
-            for key in list(cookies):
-                cookies[key] = "***"
+            redact_mapping(cookies, redact_all=True)
+
+        files = display.get("files")
+        if isinstance(files, dict):
+            for key, value in list(files.items()):
+                if isinstance(value, list):
+                    files[key] = [Path(str(path)).name for path in value]
+                else:
+                    files[key] = Path(str(value)).name
 
         return display
 
