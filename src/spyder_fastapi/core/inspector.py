@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from typing import Any
+from typing import Any, get_args
 
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from pydantic import BaseModel
 
 from spyder_fastapi.models import (
     DependencySpec,
@@ -78,6 +79,43 @@ def _source_ref(call: Callable[..., Any] | Any) -> SourceRef:
     )
 
 
+def _register_model_type(
+    value: Any,
+    registry: dict[str, SourceRef],
+    seen: set[int] | None = None,
+) -> None:
+    """Record Pydantic model classes reachable from a type annotation."""
+
+    if value is None:
+        return
+
+    if seen is None:
+        seen = set()
+
+    marker = id(value)
+    if marker in seen:
+        return
+    seen.add(marker)
+
+    for argument in get_args(value):
+        _register_model_type(argument, registry, seen)
+
+    if not inspect.isclass(value):
+        return
+
+    try:
+        is_model = issubclass(value, BaseModel)
+    except TypeError:
+        is_model = False
+
+    if not is_model:
+        return
+
+    registry.setdefault(value.__name__, _source_ref(value))
+    for field in value.model_fields.values():
+        _register_model_type(field.annotation, registry, seen)
+
+
 def _dependency_id(call: Any) -> str:
     return f"dependency:{_callable_name(call)}"
 
@@ -97,13 +135,20 @@ def _dependant_parameters(dependant: Any) -> list[ParameterSpec]:
     return params
 
 
-def _walk_dependency(dependant: Any, registry: dict[str, DependencySpec]) -> str:
+def _walk_dependency(
+    dependant: Any,
+    registry: dict[str, DependencySpec],
+    model_sources: dict[str, SourceRef],
+) -> str:
     call = getattr(dependant, "call", None)
     dep_id = _dependency_id(call)
 
     children: list[str] = []
+    for field in getattr(dependant, "body_params", ()):
+        _register_model_type(getattr(field, "type_", None), model_sources)
+
     for child in getattr(dependant, "dependencies", ()):
-        children.append(_walk_dependency(child, registry))
+        children.append(_walk_dependency(child, registry, model_sources))
 
     registry[dep_id] = DependencySpec(
         id=dep_id,
@@ -286,6 +331,7 @@ def inspect_app(app: FastAPI) -> FastAPIMap:
     """
 
     dependency_registry: dict[str, DependencySpec] = {}
+    model_sources: dict[str, SourceRef] = {}
     routes: list[RouteSpec] = []
     lineage_parts: list[LineageGraph] = []
 
@@ -294,9 +340,13 @@ def inspect_app(app: FastAPI) -> FastAPIMap:
 
     for route in api_routes:
         root_dependencies = [
-            _walk_dependency(dependant, dependency_registry)
+            _walk_dependency(dependant, dependency_registry, model_sources)
             for dependant in route.dependant.dependencies
         ]
+
+        for field in getattr(route.dependant, "body_params", ()):
+            _register_model_type(getattr(field, "type_", None), model_sources)
+        _register_model_type(route.response_model, model_sources)
 
         methods = sorted(route.methods or {"GET"})
         for method in methods:
@@ -327,16 +377,26 @@ def inspect_app(app: FastAPI) -> FastAPIMap:
         openapi.get("components", {}).get("schemas", {}) if isinstance(openapi, dict) else {}
     )
     models = [
-        ModelSpec(name=name, schema=schema)
+        ModelSpec(
+            name=name,
+            source=model_sources.get(name),
+            schema=schema,
+        )
         for name, schema in sorted(schema_definitions.items())
     ]
+
+    lineage = _merge_lineage(lineage_parts)
+    for node in lineage.nodes:
+        if node.kind == "model" and node.label in model_sources:
+            node.source = model_sources[node.label]
 
     return FastAPIMap(
         title=app.title,
         version=getattr(app, "version", None),
         openapi_version=getattr(app, "openapi_version", "3.1.0"),
+        openapi=openapi,
         routes=routes,
         dependencies=sorted(dependency_registry.values(), key=lambda dep: dep.id),
         models=models,
-        lineage=_merge_lineage(lineage_parts),
+        lineage=lineage,
     )
