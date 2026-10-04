@@ -596,6 +596,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._diagram.set_api_map(api_map)
         self._diagram.set_test_index(self._test_index)
         self._diagram.set_runtime_evidence(self._runtime_evidence)
+        self._diagram.set_native_telemetry(self._native_telemetry)
         self._populate_test_links()
         self._request_lab.set_api_map(api_map)
         self._request_lab.set_app_target(
@@ -1185,6 +1186,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._native_telemetry_offset = 0
         self._native_telemetry_partial = b""
         self._telemetry.set_store(self._native_telemetry)
+        self._diagram.set_native_telemetry(self._native_telemetry)
         self._native_telemetry_timer.start()
         return str(path)
 
@@ -1202,6 +1204,7 @@ class FastAPIStudioWidget(PluginMainWidget):
             self._native_telemetry_offset = 0
         self._native_telemetry_partial = b""
         self._telemetry.set_store(self._native_telemetry)
+        self._diagram.set_native_telemetry(self._native_telemetry)
 
     def _cleanup_native_telemetry_file(self) -> None:
         path = self._native_telemetry_path
@@ -1253,6 +1256,7 @@ class FastAPIStudioWidget(PluginMainWidget):
 
         if changed:
             self._telemetry.set_store(self._native_telemetry)
+            self._diagram.set_native_telemetry(self._native_telemetry)
 
     def _telemetry_route_selected(self, route_id: str) -> None:
         self._diagram.select_route(route_id)
