@@ -1,9 +1,11 @@
+import io
 import json
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
-from spyder_fastapi.request_cli import execute_request
+from spyder_fastapi.request_cli import execute_request, main
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -108,3 +110,32 @@ def test_request_runner_preserves_fastapi_style_422_json():
     assert result.error is None
     assert result.status_code == 422
     assert result.json_body["detail"][0]["loc"] == ["body", "name"]
+
+
+def test_request_runner_stdin_stdout_protocol(monkeypatch, capsys):
+    server, thread = _serve()
+    try:
+        host, port = server.server_address
+        command = {
+            "method": "POST",
+            "base_url": f"http://{host}:{port}",
+            "path": "/echo",
+            "body": {"value": 7},
+        }
+        monkeypatch.setattr(
+            sys,
+            "stdin",
+            io.StringIO(json.dumps(command)),
+        )
+
+        exit_code = main()
+        captured = capsys.readouterr()
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["status_code"] == 200
+    assert payload["json_body"]["body"] == {"value": 7}
