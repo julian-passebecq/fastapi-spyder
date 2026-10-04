@@ -32,14 +32,18 @@ from spyder_fastapi.core import (
     discover_route_tests,
     discover_targets,
     impacted_routes,
+    clear_runtime_evidence,
     load_snapshot,
+    record_route_execution,
     save_snapshot,
     route_tests,
 )
 from spyder_fastapi.models import (
     APIDiff,
     FastAPIMap,
+    RequestExecution,
     RouteTestIndex,
+    RuntimeEvidence,
     SourceRef,
 )
 from spyder_fastapi.spyder.diagram import FastAPIDiagramWidget
@@ -80,6 +84,8 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._loaded_target: str | None = None
         self._current_diff: APIDiff | None = None
         self._test_index = RouteTestIndex()
+        self._runtime_evidence = RuntimeEvidence()
+        self._runtime_target: str | None = None
         self._workdir = os.getcwd()
         self._python_executable = sys.executable
         self._process: QProcess | None = None
@@ -263,6 +269,7 @@ class FastAPIStudioWidget(PluginMainWidget):
 
         self._diagram = FastAPIDiagramWidget()
         self._diagram.sig_open_source.connect(self.sig_open_source.emit)
+        self._diagram.sig_clear_runtime.connect(self._clear_runtime_evidence)
         self._tabs.addTab(self._diagram, "Diagram")
 
         tests_page = QWidget()
@@ -313,6 +320,9 @@ class FastAPIStudioWidget(PluginMainWidget):
         )
         self._request_lab.sig_stop_debug_server.connect(
             self.sig_stop_debug_server.emit
+        )
+        self._request_lab.sig_request_completed.connect(
+            self._request_completed
         )
         self._request_lab.set_python_executable(self._python_executable)
         self._request_lab.set_working_directory(self._workdir)
@@ -537,6 +547,18 @@ class FastAPIStudioWidget(PluginMainWidget):
     # --- Rendering
     # ------------------------------------------------------------------
     def set_api_map(self, api_map: FastAPIMap) -> None:
+        runtime_target = (
+            self._loaded_target
+            or self._target.currentText().strip()
+            or api_map.title
+        )
+        if (
+            self._runtime_target is not None
+            and self._runtime_target != runtime_target
+        ):
+            self._runtime_evidence = RuntimeEvidence()
+        self._runtime_target = runtime_target
+
         self._api_map = api_map
         self._baseline_button.setEnabled(True)
         self._save_snapshot_button.setEnabled(True)
@@ -549,6 +571,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._populate_lineage_routes()
         self._diagram.set_api_map(api_map)
         self._diagram.set_test_index(self._test_index)
+        self._diagram.set_runtime_evidence(self._runtime_evidence)
         self._populate_test_links()
         self._request_lab.set_api_map(api_map)
         self._request_lab.set_app_target(
@@ -1119,6 +1142,27 @@ class FastAPIStudioWidget(PluginMainWidget):
                     for column in range(item.columnCount())
                 ).casefold()
                 item.setHidden(bool(needle) and needle not in haystack)
+
+    # --- Runtime evidence
+    # ------------------------------------------------------------------
+    def _request_completed(
+        self,
+        route_id: str,
+        result: RequestExecution,
+    ) -> None:
+        record_route_execution(
+            self._runtime_evidence,
+            route_id,
+            result,
+        )
+        self._diagram.set_runtime_evidence(self._runtime_evidence)
+
+    def _clear_runtime_evidence(self) -> None:
+        clear_runtime_evidence(self._runtime_evidence)
+        self._diagram.set_runtime_evidence(self._runtime_evidence)
+        self._status.setText(
+            "Cleared observed Request Lab runtime evidence."
+        )
 
     # --- Route-to-test links
     # ------------------------------------------------------------------
