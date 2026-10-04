@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI, Header, Query
+from fastapi import Body, Depends, FastAPI, Header, Query
 from pydantic import BaseModel
 
 from spyder_fastapi.core import (
@@ -107,3 +107,17 @@ def test_validation_parser_ignores_non_fastapi_error_shapes():
 
     assert validation_issues(api_map, "POST /items/{item_id}", {"error": "nope"}) == []
     assert validation_issues(api_map, "POST /items/{item_id}", ["not", "a", "dict"]) == []
+
+
+def test_request_template_detects_non_json_body_media_type():
+    app = FastAPI(title="Media API")
+
+    @app.post("/text")
+    def text_body(payload: str = Body(media_type="text/plain")):
+        return payload
+
+    api_map = inspect_app(app)
+    template = build_request_template(api_map, "POST /text")
+
+    assert template.body_required is True
+    assert template.body_content_type == "text/plain"
