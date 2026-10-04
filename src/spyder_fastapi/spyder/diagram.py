@@ -366,7 +366,10 @@ class FastAPIDiagramWidget(QWidget):
     @staticmethod
     def _node_text(node: DiagramNode) -> str:
         header = node.kind.upper()
-        text = f"{header}\n{node.label}"
+        display_label = node.label
+        if node.kind in {"dependency", "handler"}:
+            display_label = node.label.rsplit(".", 1)[-1]
+        text = f"{header}\n{display_label}"
         if node.kind in {"dependency", "model"} and node.impact_count:
             suffix = "route" if node.impact_count == 1 else "routes"
             text += f"\nused by {node.impact_count} {suffix}"
