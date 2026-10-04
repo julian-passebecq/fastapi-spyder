@@ -38,6 +38,7 @@ class ParameterSpec(BaseModel):
     """One request parameter accepted by a route or dependency."""
 
     name: str
+    alias: str | None = None
     location: Literal["path", "query", "header", "cookie", "body"]
     type_name: str
     required: bool
@@ -166,6 +167,7 @@ class RequestField(BaseModel):
     """One editable input in the generated Request Lab form."""
 
     name: str
+    python_name: str | None = None
     location: RequestLocation
     type_name: str
     required: bool
