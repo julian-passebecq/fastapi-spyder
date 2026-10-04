@@ -287,6 +287,9 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._tabs.addTab(self._diagram, "Diagram")
 
         self._telemetry = FastAPITelemetryWidget()
+        self._diagram.sig_open_telemetry.connect(
+            self._open_telemetry_route
+        )
         self._telemetry.sig_clear.connect(self.clear_native_telemetry)
         self._telemetry.sig_route_selected.connect(
             self._telemetry_route_selected
@@ -1266,6 +1269,22 @@ class FastAPIStudioWidget(PluginMainWidget):
         diagram_index = self._tabs.indexOf(self._diagram)
         if diagram_index >= 0:
             self._tabs.setCurrentIndex(diagram_index)
+
+    def _open_telemetry_route(self, route_id: str) -> None:
+        """Drill from observed Diagram evidence into the latest route trace."""
+
+        found = self._telemetry.select_route(route_id)
+        telemetry_index = self._tabs.indexOf(self._telemetry)
+        if telemetry_index >= 0:
+            self._tabs.setCurrentIndex(telemetry_index)
+
+        self._status.setText(
+            (
+                f"Opened latest native telemetry for {route_id}."
+                if found
+                else f"No native telemetry trace captured yet for {route_id}."
+            )
+        )
 
     def _telemetry_function_selected(self, function_name: str) -> None:
         """Open source for an observed FastAPI operation when resolvable."""
