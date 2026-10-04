@@ -161,10 +161,32 @@ interaction. On Windows, start the reproducible user qualification with:
 powershell -ExecutionPolicy Bypass -File .\scripts\qualify-windows.ps1
 ```
 
-That command verifies the environment and demo first, writes a local evidence
-sheet tied to the exact Git SHA, and launches Spyder in the realistic demo
+That command verifies the environment, Spyder plugin discovery, the exact
+editor/debug API contract used by FastAPI Studio, native Variable Explorer
+availability and the demo first. It then writes a local evidence sheet tied to
+the exact Git SHA and launches Spyder in the realistic demo
 project. The full acceptance flow is documented in
 `docs/MANUAL-QUALIFICATION.md`.
+
+## Spyder integration contract
+
+FastAPI Studio depends on a deliberately small set of Spyder-native APIs rather
+than a private parallel debugger runtime. At plugin load and in CI it validates
+the integration surface it actually uses:
+
+- Editor source loading and `get_codeeditor_for_filename`;
+- the Debugger's `BreakpointsManager.get_breakpoints` and
+  `toogle_breakpoint(line_number=...)`;
+- `IPythonConsole.run_script(..., method="debugfile")`;
+- current-shell lookup and targeted `ShellWidget.interrupt_kernel()`.
+
+If a future Spyder build removes or changes one of those required APIs,
+`check_compatibility()` rejects that build with an actionable message instead
+of allowing FastAPI Studio to fail later during a debug action.
+
+The native Variable Explorer is also checked during qualification. It remains a
+Spyder-owned debugger surface: FastAPI Studio does not reimplement or mirror
+its namespace/frame handling.
 
 ## End-to-end demo client
 
