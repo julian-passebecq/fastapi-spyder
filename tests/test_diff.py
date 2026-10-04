@@ -30,7 +30,7 @@ def build_after() -> FastAPI:
         count: int
 
     @app.post("/items", response_model=Payload)
-    def create_item(payload: Payload, limit: int = 10):
+    def create_item(payload: Payload, limit: int):
         _ = limit
         return payload
 
