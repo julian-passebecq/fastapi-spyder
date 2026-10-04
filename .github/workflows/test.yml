@@ -188,6 +188,23 @@ jobs:
           assert widget._request_lab._history_tree.topLevelItemCount() == 1
           assert "***" in widget._request_lab._history_details.toPlainText()
 
+          redacted = widget._request_lab._redacted_command(
+              {
+                  "form": {"username": "alice", "password": "secret"},
+                  "files": {
+                      "document": "/tmp/private/report.pdf",
+                      "documents": [
+                          "/tmp/private/a.txt",
+                          "/tmp/private/b.txt",
+                      ],
+                  },
+              }
+          )
+          assert redacted["form"]["username"] == "alice"
+          assert redacted["form"]["password"] == "***"
+          assert redacted["files"]["document"] == "report.pdf"
+          assert redacted["files"]["documents"] == ["a.txt", "b.txt"]
+
           widget.set_baseline()
           widget.set_api_map(inspect_app(after))
           assert widget._changes_tree.topLevelItemCount() >= 1
