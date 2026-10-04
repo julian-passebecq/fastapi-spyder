@@ -234,3 +234,35 @@ def test_request_runner_rejects_missing_upload_file(tmp_path):
             }
         )
 
+def test_request_runner_sends_multiple_files_for_same_field(tmp_path):
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    first.write_text("first payload", encoding="utf-8")
+    second.write_text("second payload", encoding="utf-8")
+
+    server, thread = _serve()
+    try:
+        host, port = server.server_address
+        result = execute_request(
+            {
+                "method": "POST",
+                "base_url": f"http://{host}:{port}",
+                "path": "/batch",
+                "files": {
+                    "documents": [str(first), str(second)],
+                },
+            }
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+    assert result.error is None
+    raw = result.json_body["body"]["raw"]
+    assert raw.count('name="documents"') == 2
+    assert 'filename="first.txt"' in raw
+    assert 'filename="second.txt"' in raw
+    assert "first payload" in raw
+    assert "second payload" in raw
+
