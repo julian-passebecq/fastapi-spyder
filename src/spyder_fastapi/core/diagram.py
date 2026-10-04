@@ -60,6 +60,7 @@ def _test_nodes_for_routes(
                 label=reference.test_name,
                 source=reference.source,
                 route_id=reference.route_id,
+                evidence="test",
             ),
         )
 
