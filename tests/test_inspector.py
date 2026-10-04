@@ -80,6 +80,10 @@ def test_inspection_extracts_contract_source_and_lineage():
 
     model_names = {model.name for model in result.models}
     assert {"ItemIn", "ItemOut"} <= model_names
+    item_in = next(model for model in result.models if model.name == "ItemIn")
+    assert item_in.source is not None
+    assert item_in.source.line is not None
+    assert "/items/{item_id}" in result.openapi["paths"]
 
 
 def test_json_bridge_uses_schema_key():
