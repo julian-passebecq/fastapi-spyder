@@ -42,6 +42,7 @@ def test_request_template_includes_contract_and_dependency_inputs():
     assert template.path == "/items/{item_id}"
     assert template.body_model == "Payload"
     assert template.body_required is True
+    assert template.body_content_type == "application/json"
     assert template.body_example == {
         "name": "string",
         "count": 0,
