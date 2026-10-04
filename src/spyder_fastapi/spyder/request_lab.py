@@ -672,6 +672,125 @@ class RequestLabWidget(QWidget):
             f"Request completed: {result.status_code} {result.reason or ''}".strip()
         )
 
+    def _record_history(
+        self,
+        result: RequestExecution,
+        *,
+        command: dict | None,
+        route_id: str | None,
+    ) -> None:
+        if command is None:
+            return
+
+        index = len(self._history)
+        entry = {
+            "command": json.loads(json.dumps(command)),
+            "route_id": route_id,
+            "result": result.model_copy(deep=True),
+        }
+        self._history.append(entry)
+
+        status = str(result.status_code) if result.status_code is not None else "ERR"
+        elapsed = (
+            f"{result.elapsed_ms:.1f} ms"
+            if result.elapsed_ms is not None
+            else "-"
+        )
+        item = QTreeWidgetItem(
+            [
+                str(index + 1),
+                status,
+                route_id or "-",
+                elapsed,
+                result.url or "-",
+            ]
+        )
+        item.setData(0, _ROLE_HISTORY_INDEX, index)
+        self._history_tree.insertTopLevelItem(0, item)
+        self._clear_history_button.setEnabled(True)
+        self._history_tree.setCurrentItem(item)
+        self._update_replay_enabled()
+
+        for column in range(self._history_tree.columnCount()):
+            self._history_tree.resizeColumnToContents(column)
+
+    @staticmethod
+    def _redacted_command(command: dict) -> dict:
+        display = json.loads(json.dumps(command))
+
+        headers = display.get("headers")
+        if isinstance(headers, dict):
+            for key in list(headers):
+                lowered = key.casefold()
+                if any(
+                    marker in lowered
+                    for marker in ("authorization", "api-key", "apikey", "token", "secret")
+                ):
+                    headers[key] = "***"
+
+        cookies = display.get("cookies")
+        if isinstance(cookies, dict):
+            for key in list(cookies):
+                cookies[key] = "***"
+
+        return display
+
+    def _history_selected(self, item: QTreeWidgetItem | None, _previous) -> None:
+        self._update_replay_enabled()
+        if item is None:
+            self._history_details.clear()
+            return
+
+        index = item.data(0, _ROLE_HISTORY_INDEX)
+        if index is None or not (0 <= int(index) < len(self._history)):
+            self._history_details.clear()
+            return
+
+        entry = self._history[int(index)]
+        result: RequestExecution = entry["result"]
+        command = self._redacted_command(entry["command"])
+
+        self._history_details.setPlainText(
+            "Request\n"
+            + json.dumps(command, indent=2, ensure_ascii=False)
+            + "\n\nResponse\n"
+            + result.model_dump_json(indent=2)
+        )
+
+    def _update_replay_enabled(self) -> None:
+        self._replay_history.setEnabled(
+            self._process is None
+            and self._history_tree.currentItem() is not None
+        )
+
+    def _replay_selected_history(self) -> None:
+        if self._process is not None:
+            self.sig_status.emit("A Request Lab request is already running.")
+            return
+
+        item = self._history_tree.currentItem()
+        if item is None:
+            return
+
+        index = item.data(0, _ROLE_HISTORY_INDEX)
+        if index is None or not (0 <= int(index) < len(self._history)):
+            return
+
+        entry = self._history[int(index)]
+        command = json.loads(json.dumps(entry["command"]))
+        route_id = entry.get("route_id")
+        self.sig_status.emit(
+            f"Replaying {route_id or command.get('path', 'request')} exactly."
+        )
+        self._start_request(command, route_id)
+
+    def _clear_history(self) -> None:
+        self._history.clear()
+        self._history_tree.clear()
+        self._history_details.clear()
+        self._clear_history_button.setEnabled(False)
+        self._update_replay_enabled()
+
     def _render_validation_issues(self, issues) -> None:
         self._validation.clear()
         self._validation_summary.setText(
