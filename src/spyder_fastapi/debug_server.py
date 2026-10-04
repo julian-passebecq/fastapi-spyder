@@ -38,12 +38,18 @@ def _load_uvicorn() -> Any:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.telemetry_file:
-        from spyder_fastapi.telemetry_capture import configure_native_telemetry
+        try:
+            from spyder_fastapi.telemetry_capture import configure_native_telemetry
 
-        status = configure_native_telemetry(args.telemetry_file)
-        message = status.get("message")
-        if message:
-            print(f"[FastAPI Studio] {message}")
+            status = configure_native_telemetry(args.telemetry_file)
+            message = status.get("message")
+            if message:
+                print(f"[FastAPI Studio] {message}")
+        except Exception as exc:
+            print(
+                "[FastAPI Studio] Native telemetry capture could not be "
+                f"configured; continuing without it: {exc}"
+            )
 
     uvicorn = _load_uvicorn()
     uvicorn.run(
