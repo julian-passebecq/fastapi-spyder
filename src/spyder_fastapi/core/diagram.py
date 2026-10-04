@@ -557,6 +557,7 @@ def overlay_runtime_lineage(
                 p95_ms=_runtime_percentile(durations, 0.95),
                 last_ms=ordered[-1].duration_ms,
                 target=target,
+                trace_id=ordered[-1].trace_id,
             )
         )
 
