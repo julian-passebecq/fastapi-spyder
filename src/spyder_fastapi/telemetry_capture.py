@@ -272,6 +272,9 @@ def _install_log_capture() -> tuple[bool, str]:
         def shutdown(self) -> None:
             return None
 
+        def force_flush(self, timeout_millis: int = 30000) -> bool:
+            return True
+
     exporter = _JsonlLogExporter()
     processor = SimpleLogRecordProcessor(exporter)
     current = _logs.get_logger_provider()
