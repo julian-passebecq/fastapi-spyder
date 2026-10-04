@@ -395,6 +395,63 @@ class NativeTelemetryStore:
             return min(server, key=lambda span: span.start_ns)
         return min(spans, key=lambda span: span.start_ns) if spans else None
 
+    def preferred_source_function(self, trace_id: str) -> str | None:
+        """Return the best source-backed FastAPI function for one trace.
+
+        Native exception logs intentionally do not persist traceback frames.
+        For source navigation, reuse the already captured FastAPI operation
+        spans and prefer the deepest failed operation carrying
+        code.function.name.
+        """
+
+        spans = self.trace_spans(trace_id)
+        if not spans:
+            return None
+
+        by_id = {span.span_id: span for span in spans}
+
+        def depth(span: NativeTelemetrySpan) -> int:
+            seen: set[str] = set()
+            current = span
+            result = 0
+            while current.parent_span_id and current.parent_span_id in by_id:
+                if current.parent_span_id in seen:
+                    break
+                seen.add(current.parent_span_id)
+                result += 1
+                current = by_id[current.parent_span_id]
+            return result
+
+        candidates: list[tuple[int, int, int, int, str]] = []
+        for span in spans:
+            raw_function = span.attributes.get("code.function.name")
+            if not isinstance(raw_function, str) or not raw_function.strip():
+                continue
+
+            failed = int(
+                span.status == "ERROR"
+                or "error.type" in span.attributes
+            )
+            operation_priority = {
+                "fastapi.endpoint": 3,
+                "fastapi.dependencies": 2,
+                "fastapi.background_task": 1,
+                "fastapi.serialization": 0,
+            }.get(span.name, 0)
+            candidates.append(
+                (
+                    failed,
+                    depth(span),
+                    operation_priority,
+                    span.end_ns,
+                    raw_function.strip(),
+                )
+            )
+
+        if not candidates:
+            return None
+        return max(candidates)[-1]
+
     def recent_server_spans(self, limit: int = 120) -> list[NativeTelemetrySpan]:
         return sorted(
             self.server_spans(),
