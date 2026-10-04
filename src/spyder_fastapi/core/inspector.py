@@ -54,7 +54,7 @@ def _type_name(value: Any) -> str:
 def _field_type(field: Any) -> Any:
     """Resolve a FastAPI/Pydantic field annotation across compatibility layers."""
 
-    direct = _field_type(field)
+    direct = getattr(field, "type_", None)
     if direct is not None:
         return direct
 
