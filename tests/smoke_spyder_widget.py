@@ -78,6 +78,8 @@ assert FastAPIStudioPlugin.NAME == "fastapi_studio"
 contract_issues = spyder_contract_issues()
 assert contract_issues == [], contract_issues
 assert variable_explorer_available()
+compatible, compatibility_message = FastAPIStudioPlugin.check_compatibility(None)
+assert compatible, compatibility_message
 print("SPYDER_CONTRACT PASS")
 
 qt_app = QApplication.instance() or QApplication([])
