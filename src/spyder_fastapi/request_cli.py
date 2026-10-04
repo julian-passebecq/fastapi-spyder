@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import mimetypes
+import secrets
 import sys
 import time
+from pathlib import Path
 from http.client import responses as HTTP_REASONS
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -50,6 +53,54 @@ def _build_url(command: dict[str, Any]) -> str:
     return url
 
 
+def _form_body(
+    values: dict[str, Any],
+) -> tuple[bytes, str]:
+    encoded = urlencode(
+        [(str(key), str(value)) for key, value in values.items()],
+        doseq=True,
+    ).encode("utf-8")
+    return encoded, "application/x-www-form-urlencoded"
+
+
+def _multipart_body(
+    values: dict[str, Any],
+    files: dict[str, Any],
+) -> tuple[bytes, str]:
+    boundary = "----fastapi-spyder-" + secrets.token_hex(12)
+    chunks: list[bytes] = []
+
+    def add_line(value: str = "") -> None:
+        chunks.append(value.encode("utf-8") + b"\r\n")
+
+    for name, value in values.items():
+        add_line(f"--{boundary}")
+        add_line(
+            f'Content-Disposition: form-data; name="{str(name)}"'
+        )
+        add_line()
+        add_line(str(value))
+
+    for name, raw_path in files.items():
+        path = Path(str(raw_path)).expanduser()
+        if not path.is_file():
+            raise ValueError(f"Upload file does not exist: {path}")
+
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        add_line(f"--{boundary}")
+        add_line(
+            f'Content-Disposition: form-data; name="{str(name)}"; '
+            f'filename="{path.name}"'
+        )
+        add_line(f"Content-Type: {content_type}")
+        add_line()
+        chunks.append(path.read_bytes())
+        chunks.append(b"\r\n")
+
+    add_line(f"--{boundary}--")
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+
 def execute_request(command: dict[str, Any]) -> RequestExecution:
     """Execute one HTTP request using only the Python standard library."""
 
@@ -75,9 +126,37 @@ def execute_request(command: dict[str, Any]) -> RequestExecution:
         )
 
     data: bytes | None = None
+
+    body_modes = [
+        command.get("body") is not None,
+        bool(command.get("form")),
+        bool(command.get("multipart")) or bool(command.get("files")),
+    ]
+    if sum(bool(mode) for mode in body_modes) > 1:
+        raise ValueError(
+            "request command must use only one body mode: body, form, or multipart/files"
+        )
+
     if "body" in command and command.get("body") is not None:
         data = json.dumps(command["body"]).encode("utf-8")
         request_headers.setdefault("Content-Type", "application/json")
+        request_headers.setdefault("Accept", "application/json")
+    elif command.get("form"):
+        form = command.get("form")
+        if not isinstance(form, dict):
+            raise ValueError("form must be an object")
+        data, content_type = _form_body(form)
+        request_headers.setdefault("Content-Type", content_type)
+        request_headers.setdefault("Accept", "application/json")
+    elif command.get("multipart") or command.get("files"):
+        multipart = command.get("multipart") or {}
+        files = command.get("files") or {}
+        if not isinstance(multipart, dict):
+            raise ValueError("multipart must be an object")
+        if not isinstance(files, dict):
+            raise ValueError("files must be an object")
+        data, content_type = _multipart_body(multipart, files)
+        request_headers.setdefault("Content-Type", content_type)
         request_headers.setdefault("Accept", "application/json")
 
     request = Request(
