@@ -334,3 +334,21 @@ def test_request_template_detects_repeated_form_values():
     assert fields["values"].is_file is False
     assert fields["values"].type_name == "string[]"
 
+def test_request_template_detects_repeated_query_values():
+    app = FastAPI(title="Repeated Query API")
+
+    @app.get("/search")
+    def search(tags: list[str] = Query()):
+        return {"tags": tags}
+
+    api_map = inspect_app(app)
+    template = build_request_template(api_map, "GET /search")
+
+    fields = {
+        (field.location, field.name): field
+        for field in template.parameters
+    }
+    tags = fields[("query", "tags")]
+    assert tags.multiple is True
+    assert tags.required is True
+
