@@ -110,6 +110,77 @@ def _schema_example(
     return None
 
 
+def _resolve_schema(
+    api_map: FastAPIMap,
+    schema: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve a local OpenAPI schema reference when possible."""
+
+    ref = schema.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+        name = ref.rsplit("/", 1)[-1]
+        target = (
+            api_map.openapi.get("components", {})
+            .get("schemas", {})
+            .get(name, {})
+        )
+        if isinstance(target, dict):
+            return target
+    return schema
+
+
+def _body_fields(
+    api_map: FastAPIMap,
+    schema: dict[str, Any],
+    *,
+    source: SourceRef | None,
+) -> list[RequestField]:
+    """Generate editable form/multipart fields from an OpenAPI body schema."""
+
+    resolved = _resolve_schema(api_map, schema)
+    properties = resolved.get("properties", {})
+    if not isinstance(properties, dict):
+        return []
+
+    required_names = set(resolved.get("required", []))
+    fields: list[RequestField] = []
+    for name, raw_field_schema in properties.items():
+        if not isinstance(raw_field_schema, dict):
+            continue
+
+        field_schema = _resolve_schema(api_map, raw_field_schema)
+        field_type = str(
+            field_schema.get("type")
+            or raw_field_schema.get("type")
+            or "string"
+        )
+        field_format = field_schema.get("format") or raw_field_schema.get("format")
+        is_file = field_type == "string" and field_format == "binary"
+
+        example = None if is_file else _schema_example(api_map, raw_field_schema)
+        media_type = (
+            field_schema.get("contentMediaType")
+            or raw_field_schema.get("contentMediaType")
+        )
+
+        fields.append(
+            RequestField(
+                name=str(name),
+                python_name=str(name),
+                location="body",
+                type_name="file" if is_file else field_type,
+                required=name in required_names,
+                example=example,
+                description=raw_field_schema.get("description"),
+                source=source,
+                is_file=is_file,
+                media_type=str(media_type) if media_type else None,
+            )
+        )
+
+    return fields
+
+
 def _parameter_metadata(
     operation: dict[str, Any],
 ) -> dict[tuple[str, str], dict[str, Any]]:
@@ -265,6 +336,7 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
     body_content_type: str | None = None
     body_model = route.request_models[0] if route.request_models else None
     body_source: SourceRef | None = None
+    body_fields: list[RequestField] = []
     if body_model:
         model = next((item for item in api_map.models if item.name == body_model), None)
         if model is not None:
@@ -292,6 +364,15 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
                 schema = preferred.get("schema")
                 if isinstance(schema, dict):
                     body_example = _schema_example(api_map, schema)
+                    if body_content_type in {
+                        "application/x-www-form-urlencoded",
+                        "multipart/form-data",
+                    }:
+                        body_fields = _body_fields(
+                            api_map,
+                            schema,
+                            source=body_source or route.source,
+                        )
 
     if body_example is None and body_model:
         model = next((item for item in api_map.models if item.name == body_model), None)
@@ -308,6 +389,7 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
         body_content_type=body_content_type,
         body_model=body_model,
         body_source=body_source,
+        body_fields=body_fields,
     )
 
 
