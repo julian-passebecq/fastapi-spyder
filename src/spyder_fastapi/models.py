@@ -218,3 +218,32 @@ class RequestExecution(BaseModel):
     elapsed_ms: float | None = None
     error: str | None = None
 
+class DiagramNode(BaseModel):
+    """Presentation-neutral node used by FastAPI architecture diagrams."""
+
+    id: str
+    kind: NodeKind
+    label: str
+    source: SourceRef | None = None
+    route_id: str | None = None
+    impact_count: int = 0
+
+
+class DiagramEdge(BaseModel):
+    """Directed diagram relationship after optional graph compaction."""
+
+    source: str
+    target: str
+    relation: str
+
+
+class DiagramProjection(BaseModel):
+    """Headless graph projection rendered by the Spyder Qt diagram view."""
+
+    mode: Literal["route", "global", "impact"]
+    title: str
+    roots: list[str] = Field(default_factory=list)
+    nodes: list[DiagramNode] = Field(default_factory=list)
+    edges: list[DiagramEdge] = Field(default_factory=list)
+    focus_id: str | None = None
+
