@@ -284,6 +284,7 @@ def test_runtime_lineage_attaches_observed_database_to_static_handler():
     assert runtime.label == "postgresql:catalog · SELECT"
     assert runtime.observed_count == 1
     assert runtime.last_ms == 6.0
+    assert runtime.trace_id == trace_id
 
     handler_id = next(
         edge.target
