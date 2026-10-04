@@ -18,6 +18,10 @@ from spyder.plugins.ipythonconsole.plugin import IPythonConsole
 from spyder_fastapi.core import NativeTelemetryStore, inspect_app
 from spyder_fastapi.models import RequestExecution
 from spyder_fastapi.telemetry_capture import configure_native_telemetry
+from spyder_fastapi.spyder.compat import (
+    spyder_contract_issues,
+    variable_explorer_available,
+)
 from spyder_fastapi.spyder.plugin import FastAPIStudioPlugin
 from spyder_fastapi.spyder.widget import FastAPIStudioWidget
 
@@ -70,6 +74,11 @@ assert plugin_entries["fastapi_studio"] == (
 external_plugins = find_external_plugins()
 assert external_plugins["fastapi_studio"] is FastAPIStudioPlugin
 assert FastAPIStudioPlugin.NAME == "fastapi_studio"
+
+contract_issues = spyder_contract_issues()
+assert contract_issues == [], contract_issues
+assert variable_explorer_available()
+print("SPYDER_CONTRACT PASS")
 
 qt_app = QApplication.instance() or QApplication([])
 project_temp = TemporaryDirectory(prefix="FastAPI Studio ")
