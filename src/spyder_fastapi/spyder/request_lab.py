@@ -526,12 +526,18 @@ class RequestLabWidget(QWidget):
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
 
             location_item.setData(_ROLE_REQUIRED, field.required)
+            location_item.setData(_ROLE_MULTIPLE, field.multiple)
             if field.source is not None and field.source.file:
                 location_item.setData(_ROLE_SOURCE_FILE, field.source.file)
                 location_item.setData(_ROLE_SOURCE_LINE, field.source.line or 1)
 
             if field.description:
                 value_item.setToolTip(field.description)
+            if field.multiple:
+                value_item.setToolTip(
+                    (value_item.toolTip() + "\n" if value_item.toolTip() else "")
+                    + "Use one repeated query value per line."
+                )
 
             self._parameters.setItem(row, 0, location_item)
             self._parameters.setItem(row, 1, name_item)
@@ -822,6 +828,7 @@ class RequestLabWidget(QWidget):
             name = name_item.text()
             value = value_item.text().strip() if value_item is not None else ""
             required = bool(location_item.data(_ROLE_REQUIRED))
+            multiple = bool(location_item.data(_ROLE_MULTIPLE))
 
             if not value:
                 if required:
@@ -832,7 +839,14 @@ class RequestLabWidget(QWidget):
 
             bucket = buckets.get(location)
             if bucket is not None:
-                bucket[name] = value
+                if location == "query" and multiple:
+                    bucket[name] = [
+                        item.strip()
+                        for item in value.splitlines()
+                        if item.strip()
+                    ]
+                else:
+                    bucket[name] = value
 
         command = {
             "method": self._template.method,
