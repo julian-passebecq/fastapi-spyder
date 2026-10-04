@@ -211,6 +211,7 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
 
     body_example: Any = None
     body_required = False
+    body_content_type: str | None = None
     body_model = route.request_models[0] if route.request_models else None
     body_source: SourceRef | None = None
     if body_model:
@@ -222,12 +223,20 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
     if isinstance(request_body, dict):
         body_required = bool(request_body.get("required", False))
         request_content = request_body.get("content", {})
-        if isinstance(request_content, dict):
-            preferred = (
-                request_content.get("application/json")
-                or request_content.get("application/*+json")
-                or next(iter(request_content.values()), None)
-            )
+        if isinstance(request_content, dict) and request_content:
+            if "application/json" in request_content:
+                body_content_type = "application/json"
+            else:
+                body_content_type = next(
+                    (
+                        key
+                        for key in request_content
+                        if key.endswith("+json")
+                    ),
+                    next(iter(request_content)),
+                )
+
+            preferred = request_content.get(body_content_type)
             if isinstance(preferred, dict):
                 schema = preferred.get("schema")
                 if isinstance(schema, dict):
@@ -245,6 +254,7 @@ def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplat
         parameters=fields,
         body_example=body_example,
         body_required=body_required,
+        body_content_type=body_content_type,
         body_model=body_model,
         body_source=body_source,
     )
