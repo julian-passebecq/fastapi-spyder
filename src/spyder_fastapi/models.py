@@ -21,7 +21,13 @@ DiagramNodeKind = Literal[
     "dependency",
     "handler",
     "test",
+    "database",
+    "http-client",
+    "messaging",
+    "rpc",
+    "external",
 ]
+DiagramEvidenceKind = Literal["contract", "test", "runtime"]
 
 
 class SourceRef(BaseModel):
@@ -255,6 +261,12 @@ class DiagramNode(BaseModel):
     source: SourceRef | None = None
     route_id: str | None = None
     impact_count: int = 0
+    evidence: DiagramEvidenceKind = "contract"
+    observed_count: int = 0
+    average_ms: float | None = None
+    p95_ms: float | None = None
+    last_ms: float | None = None
+    target: str | None = None
 
 
 class DiagramEdge(BaseModel):
