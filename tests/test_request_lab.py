@@ -1,4 +1,4 @@
-from fastapi import Body, Depends, FastAPI, Header, Query
+from fastapi import Body, Depends, FastAPI, File, Form, Header, Query, UploadFile
 from pydantic import BaseModel
 
 from spyder_fastapi.core import (
@@ -214,3 +214,46 @@ def test_pydantic_field_alias_maps_back_to_exact_field_source():
     assert len(issues) == 1
     assert issues[0].source is not None
     assert issues[0].source.qualname.endswith(".AliasedPayload.count")
+
+def test_request_template_builds_urlencoded_form_fields():
+    app = FastAPI(title="Form API")
+
+    @app.post("/login")
+    def login(
+        username: str = Form(),
+        remember: bool = Form(default=False),
+    ):
+        return {"username": username, "remember": remember}
+
+    api_map = inspect_app(app)
+    template = build_request_template(api_map, "POST /login")
+
+    assert template.body_content_type == "application/x-www-form-urlencoded"
+    fields = {field.name: field for field in template.body_fields}
+    assert fields["username"].required is True
+    assert fields["username"].is_file is False
+    assert fields["remember"].required is False
+    assert fields["remember"].is_file is False
+
+
+def test_request_template_builds_multipart_fields_and_file_inputs():
+    app = FastAPI(title="Upload API")
+
+    @app.post("/upload")
+    async def upload(
+        description: str = Form(),
+        document: UploadFile = File(),
+    ):
+        return {"description": description, "filename": document.filename}
+
+    api_map = inspect_app(app)
+    template = build_request_template(api_map, "POST /upload")
+
+    assert template.body_content_type == "multipart/form-data"
+    fields = {field.name: field for field in template.body_fields}
+    assert fields["description"].required is True
+    assert fields["description"].is_file is False
+    assert fields["document"].required is True
+    assert fields["document"].is_file is True
+    assert fields["document"].type_name == "file"
+
