@@ -234,6 +234,7 @@ jobs:
 
           widget.set_working_directory(project_root)
           widget.set_api_map(inspect_app(before))
+          widget._diagram.select_route("GET /health")
 
           assert FastAPIStudioPlugin.NAME == "fastapi_studio"
           assert "method" in signature(IPythonConsole.run_script).parameters
