@@ -31,6 +31,7 @@ from spyder_fastapi.core import (
     impacted_routes,
     route_projection,
 )
+from spyder_fastapi.core.telemetry import NativeTelemetryStore
 from spyder_fastapi.models import (
     DiagramNode,
     DiagramProjection,
@@ -42,7 +43,7 @@ from spyder_fastapi.models import (
 
 _NODE_ID = 0
 _NODE_WIDTH = 220.0
-_NODE_HEIGHT = 82.0
+_NODE_HEIGHT = 98.0
 _X_GAP = 290.0
 _Y_GAP = 118.0
 
@@ -99,6 +100,8 @@ class FastAPIDiagramWidget(QWidget):
         self._api_map: FastAPIMap | None = None
         self._test_index = RouteTestIndex()
         self._runtime_evidence = RuntimeEvidence()
+        self._native_telemetry = NativeTelemetryStore()
+        self._native_route_summaries = {}
         self._projection: DiagramProjection | None = None
         self._node_items: dict[str, QGraphicsRectItem] = {}
 
@@ -119,14 +122,21 @@ class FastAPIDiagramWidget(QWidget):
         )
         self._show_tests.toggled.connect(self._render_current)
 
-        self._show_runtime = QCheckBox("Runtime")
+        self._show_native = QCheckBox("Server")
+        self._show_native.setChecked(True)
+        self._show_native.setToolTip(
+            "Show FastAPI native OpenTelemetry server-span timing on routes."
+        )
+        self._show_native.toggled.connect(self._render_current)
+
+        self._show_runtime = QCheckBox("Client")
         self._show_runtime.setChecked(True)
         self._show_runtime.setToolTip(
             "Show observed Request Lab end-to-end client timing on routes."
         )
         self._show_runtime.toggled.connect(self._render_current)
 
-        self._clear_runtime = QPushButton("Clear runtime")
+        self._clear_runtime = QPushButton("Clear client")
         self._clear_runtime.setEnabled(False)
         self._clear_runtime.clicked.connect(self.sig_clear_runtime.emit)
 
@@ -147,6 +157,7 @@ class FastAPIDiagramWidget(QWidget):
         controls.addWidget(self._focus_label)
         controls.addWidget(self._focus, 1)
         controls.addWidget(self._show_tests)
+        controls.addWidget(self._show_native)
         controls.addWidget(self._show_runtime)
         controls.addWidget(self._clear_runtime)
         controls.addWidget(self._fit)
@@ -207,6 +218,18 @@ class FastAPIDiagramWidget(QWidget):
         self._show_runtime.setToolTip(
             "Show observed Request Lab end-to-end client timing on routes "
             f"({total} request(s))."
+        )
+        self._render_current()
+
+    def set_native_telemetry(self, store: NativeTelemetryStore) -> None:
+        self._native_telemetry = store
+        self._native_route_summaries = {
+            summary.route_id: summary
+            for summary in store.route_summaries()
+        }
+        self._show_native.setToolTip(
+            "Show FastAPI native OpenTelemetry server-span timing on routes "
+            f"({store.total_requests()} request(s))."
         )
         self._render_current()
 
@@ -455,24 +478,31 @@ class FastAPIDiagramWidget(QWidget):
             suffix = "route" if node.impact_count == 1 else "routes"
             text += f"\nused by {node.impact_count} {suffix}"
 
-        if (
-            node.kind == "route"
-            and node.route_id
-            and self._show_runtime.isChecked()
-        ):
-            stats = self._runtime_evidence.routes.get(node.route_id)
-            if stats is not None:
-                status = (
-                    str(stats.last_status_code)
-                    if stats.last_status_code is not None
-                    else "ERR"
-                )
-                elapsed = (
-                    f"{stats.last_elapsed_ms:.1f} ms"
-                    if stats.last_elapsed_ms is not None
-                    else "no timing"
-                )
-                text += f"\n{status} | {elapsed}"
+        if node.kind == "route" and node.route_id:
+            if self._show_native.isChecked():
+                native = self._native_route_summaries.get(node.route_id)
+                if native is not None:
+                    status = (
+                        str(native.last_status_code)
+                        if native.last_status_code is not None
+                        else "-"
+                    )
+                    elapsed = (
+                        f"{native.last_ms:.1f} ms"
+                        if native.last_ms is not None
+                        else "-"
+                    )
+                    text += f"\nserver {status} | {elapsed}"
+
+            if self._show_runtime.isChecked():
+                stats = self._runtime_evidence.routes.get(node.route_id)
+                if stats is not None:
+                    elapsed = (
+                        f"{stats.last_elapsed_ms:.1f} ms"
+                        if stats.last_elapsed_ms is not None
+                        else "no timing"
+                    )
+                    text += f"\nclient {elapsed}"
 
         return text
 
@@ -628,6 +658,7 @@ class FastAPIDiagramWidget(QWidget):
 
         route_tests = []
         route_runtime = None
+        native_runtime = None
         if node.kind == "route" and node.route_id:
             route_tests = [
                 reference
@@ -635,6 +666,7 @@ class FastAPIDiagramWidget(QWidget):
                 if reference.route_id == node.route_id
             ]
             route_runtime = self._runtime_evidence.routes.get(node.route_id)
+            native_runtime = self._native_route_summaries.get(node.route_id)
 
         lines = [
             f"{node.kind.upper()}",
@@ -659,6 +691,35 @@ class FastAPIDiagramWidget(QWidget):
                         f"  {reference.test_name} [{reference.match_kind}]"
                         for reference in route_tests
                     ],
+                ]
+            )
+        if native_runtime is not None:
+            lines.extend(
+                [
+                    "",
+                    "FastAPI native server telemetry",
+                    "  evidence: OpenTelemetry HTTP server span",
+                    f"  requests: {native_runtime.request_count}",
+                    f"  errors: {native_runtime.error_count}",
+                    f"  error rate: {native_runtime.error_rate * 100:.1f}%",
+                    (
+                        f"  last: {native_runtime.last_ms:.1f} ms"
+                        if native_runtime.last_ms is not None
+                        else "  last: -"
+                    ),
+                    (
+                        f"  average: {native_runtime.average_ms:.1f} ms"
+                        if native_runtime.average_ms is not None
+                        else "  average: -"
+                    ),
+                    (
+                        f"  P50 / P95: {native_runtime.p50_ms:.1f} / "
+                        f"{native_runtime.p95_ms:.1f} ms"
+                        if native_runtime.p50_ms is not None
+                        and native_runtime.p95_ms is not None
+                        else "  P50 / P95: -"
+                    ),
+                    f"  last status: {native_runtime.last_status_code or '-'}",
                 ]
             )
         if route_runtime is not None:
