@@ -1270,19 +1270,34 @@ class FastAPIStudioWidget(PluginMainWidget):
         if diagram_index >= 0:
             self._tabs.setCurrentIndex(diagram_index)
 
-    def _open_telemetry_route(self, route_id: str) -> None:
-        """Drill from observed Diagram evidence into the latest route trace."""
+    def _open_telemetry_route(
+        self,
+        route_id: str,
+        trace_id: str = "",
+    ) -> None:
+        """Drill from observed Diagram evidence into its captured trace."""
 
-        found = self._telemetry.select_route(route_id)
+        found = (
+            self._telemetry.select_trace(trace_id)
+            if trace_id
+            else False
+        )
+        if not found:
+            found = self._telemetry.select_route(route_id)
+
         telemetry_index = self._tabs.indexOf(self._telemetry)
         if telemetry_index >= 0:
             self._tabs.setCurrentIndex(telemetry_index)
 
         self._status.setText(
             (
-                f"Opened latest native telemetry for {route_id}."
-                if found
-                else f"No native telemetry trace captured yet for {route_id}."
+                f"Opened runtime evidence trace for {route_id}."
+                if found and trace_id
+                else (
+                    f"Opened latest native telemetry for {route_id}."
+                    if found
+                    else f"No native telemetry trace captured yet for {route_id}."
+                )
             )
         )
 
