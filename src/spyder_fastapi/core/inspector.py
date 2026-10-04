@@ -82,6 +82,21 @@ def _dependency_id(call: Any) -> str:
     return f"dependency:{_callable_name(call)}"
 
 
+def _dependant_parameters(dependant: Any) -> list[ParameterSpec]:
+    params: list[ParameterSpec] = []
+    for location, attribute in _PARAM_GROUPS:
+        for field in getattr(dependant, attribute, ()):
+            params.append(
+                ParameterSpec(
+                    name=field.name,
+                    location=location,
+                    type_name=_type_name(getattr(field, "type_", None)),
+                    required=bool(getattr(field, "required", False)),
+                )
+            )
+    return params
+
+
 def _walk_dependency(dependant: Any, registry: dict[str, DependencySpec]) -> str:
     call = getattr(dependant, "call", None)
     dep_id = _dependency_id(call)
@@ -96,26 +111,14 @@ def _walk_dependency(dependant: Any, registry: dict[str, DependencySpec]) -> str
         source=_source_ref(call),
         use_cache=bool(getattr(dependant, "use_cache", True)),
         scope=getattr(dependant, "scope", None),
+        parameters=_dependant_parameters(dependant),
         children=children,
     )
     return dep_id
 
 
 def _route_parameters(route: APIRoute) -> list[ParameterSpec]:
-    params: list[ParameterSpec] = []
-    dependant = route.dependant
-
-    for location, attribute in _PARAM_GROUPS:
-        for field in getattr(dependant, attribute, ()):
-            params.append(
-                ParameterSpec(
-                    name=field.name,
-                    location=location,
-                    type_name=_type_name(getattr(field, "type_", None)),
-                    required=bool(getattr(field, "required", False)),
-                )
-            )
-    return params
+    return _dependant_parameters(route.dependant)
 
 
 def _request_models(route: APIRoute) -> list[str]:
@@ -199,9 +202,45 @@ def _lineage_for_route(
                 )
             )
             visited_dependencies.add(dep_id)
+
         graph.edges.append(
             LineageEdge(source=parent_id, target=dep_id, relation="depends_on")
         )
+
+        for parameter in dep.parameters:
+            parameter_id = (
+                f"parameter:{dep_id}:{parameter.location}:{parameter.name}"
+            )
+            if not any(node.id == parameter_id for node in graph.nodes):
+                graph.nodes.append(
+                    LineageNode(
+                        id=parameter_id,
+                        kind="parameter",
+                        label=f"{parameter.location}:{parameter.name}",
+                    )
+                )
+            graph.edges.append(
+                LineageEdge(source=dep_id, target=parameter_id, relation="accepts")
+            )
+
+            if parameter.location == "body":
+                model_id = f"model:{parameter.type_name}"
+                if not any(node.id == model_id for node in graph.nodes):
+                    graph.nodes.append(
+                        LineageNode(
+                            id=model_id,
+                            kind="model",
+                            label=parameter.type_name,
+                        )
+                    )
+                graph.edges.append(
+                    LineageEdge(
+                        source=parameter_id,
+                        target=model_id,
+                        relation="validates_as",
+                    )
+                )
+
         for child_id in dep.children:
             add_dependency(child_id, dep_id)
 
