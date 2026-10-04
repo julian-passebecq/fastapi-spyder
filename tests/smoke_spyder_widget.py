@@ -1,5 +1,6 @@
 """Cross-platform headless qualification for the Spyder FastAPI Studio widget."""
 
+import os
 import platform
 import sys
 from importlib.metadata import entry_points, version
@@ -78,6 +79,24 @@ tests_dir.mkdir()
 )
 
 widget = FastAPIStudioWidget("fastapi_studio", None)
+
+screenshot_root = os.environ.get("FASTAPI_STUDIO_SCREENSHOT_DIR")
+screenshot_dir = Path(screenshot_root).resolve() if screenshot_root else None
+if screenshot_dir is not None:
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
+    widget.resize(1600, 1000)
+    widget.show()
+    qt_app.processEvents()
+
+def capture(name: str) -> None:
+    if screenshot_dir is None:
+        return
+    qt_app.processEvents()
+    destination = screenshot_dir / f"{name}.png"
+    assert widget.grab().save(str(destination), "PNG")
+    assert destination.stat().st_size > 0
+    print(f"SCREENSHOT {destination}")
+
 widget.set_working_directory(project_root)
 widget.set_api_map(inspect_app(before))
 
@@ -236,6 +255,11 @@ assert (
     "Opened latest native telemetry for POST /v1/ingestions."
     in widget._status.text()
 )
+capture("telemetry")
+
+widget._tabs.setCurrentWidget(widget._diagram)
+qt_app.processEvents()
+capture("diagram-runtime-lineage")
 
 widget._diagram._show_downstream.setChecked(False)
 assert all(
