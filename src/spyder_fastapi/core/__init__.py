@@ -16,7 +16,7 @@ from .snapshot import (
     load_snapshot_text,
     save_snapshot,
 )
-from .test_links import discover_route_tests, tests_for_route
+from .test_links import discover_route_tests, route_tests
 
 __all__ = [
     "build_request_template",
@@ -33,6 +33,6 @@ __all__ = [
     "local_debug_server_address",
     "route_projection",
     "save_snapshot",
-    "tests_for_route",
+    "route_tests",
     "validation_issues",
 ]
