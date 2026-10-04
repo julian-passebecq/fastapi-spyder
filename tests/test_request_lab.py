@@ -138,3 +138,79 @@ def test_request_template_uses_openapi_path_format_for_path_converters():
     assert [(field.location, field.name) for field in template.parameters] == [
         ("path", "file_path")
     ]
+
+
+def test_request_template_uses_wire_aliases_for_headers_and_queries():
+    app = FastAPI(title="Alias API")
+
+    @app.get("/client")
+    def client_info(
+        user_agent: str = Header(),
+        page_size: int = Query(default=25, alias="page-size"),
+    ):
+        return {"user_agent": user_agent, "page_size": page_size}
+
+    api_map = inspect_app(app)
+    template = build_request_template(api_map, "GET /client")
+
+    fields = {
+        (field.location, field.name): field
+        for field in template.parameters
+    }
+
+    assert ("header", "user-agent") in fields
+    assert fields[("header", "user-agent")].python_name == "user_agent"
+    assert ("query", "page-size") in fields
+    assert fields[("query", "page-size")].python_name == "page_size"
+    assert fields[("query", "page-size")].example == 25
+
+    issues = validation_issues(
+        api_map,
+        "GET /client",
+        {
+            "detail": [
+                {
+                    "type": "missing",
+                    "loc": ["header", "user-agent"],
+                    "msg": "Field required",
+                    "input": None,
+                }
+            ]
+        },
+    )
+    assert len(issues) == 1
+    assert issues[0].expected_type == "str"
+    assert issues[0].source is not None
+
+
+def test_pydantic_field_alias_maps_back_to_exact_field_source():
+    from pydantic import Field
+
+    app = FastAPI(title="Body Alias API")
+
+    class AliasedPayload(BaseModel):
+        count: int = Field(alias="itemCount")
+
+    @app.post("/aliased")
+    def aliased(payload: AliasedPayload):
+        return payload
+
+    api_map = inspect_app(app)
+    issues = validation_issues(
+        api_map,
+        "POST /aliased",
+        {
+            "detail": [
+                {
+                    "type": "int_parsing",
+                    "loc": ["body", "itemCount"],
+                    "msg": "Input should be a valid integer",
+                    "input": "bad",
+                }
+            ]
+        },
+    )
+
+    assert len(issues) == 1
+    assert issues[0].source is not None
+    assert issues[0].source.qualname.endswith(".AliasedPayload.count")
