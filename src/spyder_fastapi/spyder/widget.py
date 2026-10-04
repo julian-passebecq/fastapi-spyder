@@ -819,10 +819,10 @@ class FastAPIStudioWidget(PluginMainWidget):
             self._routes_tree.addTopLevelItem(path_item)
 
             for route in sorted(by_path[path], key=lambda candidate: candidate.method):
-                route_tests = route_tests(self._test_index, route.id)
+                linked_tests = route_tests(self._test_index, route.id)
                 unique_tests = {
                     (test.source.file, test.test_name)
-                    for test in route_tests
+                    for test in linked_tests
                 }
                 item = QTreeWidgetItem(
                     [
@@ -837,7 +837,7 @@ class FastAPIStudioWidget(PluginMainWidget):
                 if route_tests:
                     item.setToolTip(
                         2,
-                        "\n".join(test.test_name for test in route_tests),
+                        "\n".join(test.test_name for test in linked_tests),
                     )
                 path_item.addChild(item)
                 if first_route_item is None:
@@ -888,9 +888,9 @@ class FastAPIStudioWidget(PluginMainWidget):
         ) or "  -"
 
         deps = "\n".join(f"  {_short_name(name)}" for name in dependency_names) or "  -"
-        route_tests = route_tests(self._test_index, route.id)
+        linked_tests = route_tests(self._test_index, route.id)
         unique_route_tests: dict[tuple[str | None, str], str] = {}
-        for test in route_tests:
+        for test in linked_tests:
             key = (test.source.file, test.test_name)
             unique_route_tests.setdefault(
                 key,
