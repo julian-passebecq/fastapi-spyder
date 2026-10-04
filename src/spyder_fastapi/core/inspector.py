@@ -469,7 +469,12 @@ def inspect_app(app: FastAPI) -> FastAPIMap:
     lineage_parts: list[LineageGraph] = []
 
     api_routes = [route for route in app.routes if isinstance(route, APIRoute)]
-    api_routes.sort(key=lambda route: (route.path, sorted(route.methods or {""})))
+    api_routes.sort(
+        key=lambda route: (
+            getattr(route, "path_format", route.path),
+            sorted(route.methods or {""}),
+        )
+    )
 
     for route in api_routes:
         root_dependencies = [
@@ -496,11 +501,12 @@ def inspect_app(app: FastAPI) -> FastAPIMap:
 
         methods = sorted(route.methods or {"GET"})
         for method in methods:
-            route_id = f"{method} {route.path}"
+            public_path = getattr(route, "path_format", route.path)
+            route_id = f"{method} {public_path}"
             spec = RouteSpec(
                 id=route_id,
                 method=method,
-                path=route.path,
+                path=public_path,
                 name=route.name,
                 handler=_callable_name(route.endpoint),
                 source=_source_ref(route.endpoint),
