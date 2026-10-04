@@ -35,6 +35,7 @@ from spyder_fastapi.core import (
     save_snapshot,
 )
 from spyder_fastapi.models import APIDiff, FastAPIMap, SourceRef
+from spyder_fastapi.spyder.request_lab import RequestLabWidget
 
 
 _ROLE_ID = 32
@@ -265,6 +266,13 @@ class FastAPIStudioWidget(PluginMainWidget):
         lineage_layout.addWidget(self._lineage_tree, 1)
         self._tabs.addTab(lineage_page, "Lineage")
 
+        self._request_lab = RequestLabWidget()
+        self._request_lab.sig_status.connect(self._status.setText)
+        self._request_lab.sig_open_source.connect(self.sig_open_source)
+        self._request_lab.set_python_executable(self._python_executable)
+        self._request_lab.set_working_directory(self._workdir)
+        self._tabs.addTab(self._request_lab, "Request Lab")
+
         self._openapi_view = QPlainTextEdit()
         self._openapi_view.setReadOnly(True)
         self._tabs.addTab(self._openapi_view, "OpenAPI")
@@ -313,6 +321,8 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._workdir = os.path.abspath(path)
         self._workdir_label.setText(f"Working directory: {self._workdir}")
         self._workdir_label.setToolTip(self._workdir)
+        if hasattr(self, "_request_lab"):
+            self._request_lab.set_working_directory(self._workdir)
 
     def set_python_executable(self, path: str) -> None:
         """Use Spyder's selected interpreter for project inspection."""
@@ -323,6 +333,8 @@ class FastAPIStudioWidget(PluginMainWidget):
             f"Python interpreter: {self._python_executable}"
         )
         self._interpreter_label.setToolTip(self._python_executable)
+        if hasattr(self, "_request_lab"):
+            self._request_lab.set_python_executable(self._python_executable)
 
     def discover_apps(self) -> None:
         self._status.setText("Scanning Python files for FastAPI applications...")
@@ -464,6 +476,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._populate_models()
         self._populate_dependencies()
         self._populate_lineage_routes()
+        self._request_lab.set_api_map(api_map)
         self._openapi_view.setPlainText(
             json.dumps(api_map.openapi, indent=2, sort_keys=True)
         )
@@ -777,6 +790,7 @@ class FastAPIStudioWidget(PluginMainWidget):
         )
 
         self._lineage_route.setCurrentText(route.id)
+        self._request_lab.select_route(route.id)
 
     def _populate_models(self) -> None:
         self._models_tree.clear()
