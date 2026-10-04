@@ -182,6 +182,7 @@ class RequestTemplate(BaseModel):
     parameters: list[RequestField] = Field(default_factory=list)
     body_example: Any = None
     body_required: bool = False
+    body_content_type: str | None = None
     body_model: str | None = None
     body_source: SourceRef | None = None
 
