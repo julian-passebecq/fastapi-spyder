@@ -16,7 +16,17 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length) if length else b""
-        body = json.loads(raw.decode("utf-8")) if raw else None
+        content_type = self.headers.get("Content-Type", "")
+        if not raw:
+            body = None
+        elif content_type.startswith("application/json"):
+            body = json.loads(raw.decode("utf-8"))
+        elif content_type.startswith("application/x-www-form-urlencoded"):
+            body = parse_qs(raw.decode("utf-8"))
+        elif content_type.startswith("multipart/form-data"):
+            body = {"raw": raw.decode("latin-1")}
+        else:
+            body = raw.decode("utf-8", errors="replace")
 
         if parsed.path == "/validation":
             payload = {
@@ -43,6 +53,7 @@ class Handler(BaseHTTPRequestHandler):
             "authorization": self.headers.get("Authorization"),
             "cookie": self.headers.get("Cookie"),
             "body": body,
+            "content_type": content_type,
         }
         encoded = json.dumps(payload).encode("utf-8")
         self.send_response(200)
@@ -139,3 +150,87 @@ def test_request_runner_stdin_stdout_protocol(monkeypatch, capsys):
     assert exit_code == 0
     assert payload["status_code"] == 200
     assert payload["json_body"]["body"] == {"value": 7}
+
+def test_request_runner_sends_urlencoded_form():
+    server, thread = _serve()
+    try:
+        host, port = server.server_address
+        result = execute_request(
+            {
+                "method": "POST",
+                "base_url": f"http://{host}:{port}",
+                "path": "/form",
+                "form": {
+                    "username": "alice",
+                    "remember": "true",
+                },
+            }
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+    assert result.error is None
+    assert result.status_code == 200
+    assert result.json_body["content_type"].startswith(
+        "application/x-www-form-urlencoded"
+    )
+    assert result.json_body["body"] == {
+        "username": ["alice"],
+        "remember": ["true"],
+    }
+
+
+def test_request_runner_sends_multipart_form_and_file(tmp_path):
+    upload = tmp_path / "hello.txt"
+    upload.write_text("hello multipart", encoding="utf-8")
+
+    server, thread = _serve()
+    try:
+        host, port = server.server_address
+        result = execute_request(
+            {
+                "method": "POST",
+                "base_url": f"http://{host}:{port}",
+                "path": "/upload",
+                "multipart": {
+                    "description": "sample document",
+                },
+                "files": {
+                    "document": str(upload),
+                },
+            }
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+    assert result.error is None
+    assert result.status_code == 200
+    assert result.json_body["content_type"].startswith("multipart/form-data; boundary=")
+
+    raw = result.json_body["body"]["raw"]
+    assert 'name="description"' in raw
+    assert "sample document" in raw
+    assert 'name="document"; filename="hello.txt"' in raw
+    assert "Content-Type: text/plain" in raw
+    assert "hello multipart" in raw
+
+
+def test_request_runner_rejects_missing_upload_file(tmp_path):
+    import pytest
+
+    missing = tmp_path / "missing.bin"
+
+    with pytest.raises(ValueError, match="Upload file does not exist"):
+        execute_request(
+            {
+                "method": "POST",
+                "base_url": "http://127.0.0.1:1",
+                "path": "/upload",
+                "files": {"document": str(missing)},
+            }
+        )
+
