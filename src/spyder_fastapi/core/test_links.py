@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -46,25 +47,32 @@ def _candidate_test_files(root: Path, max_files: int) -> list[Path]:
     if root.is_file():
         return [root] if root.suffix == ".py" else []
 
-    candidates: set[Path] = set()
-    patterns = ("test_*.py", "*_test.py")
-    for pattern in patterns:
-        for path in root.rglob(pattern):
-            if any(part in _IGNORED_DIRS for part in path.parts):
-                continue
-            candidates.add(path)
-            if len(candidates) >= max_files:
-                return sorted(candidates)
+    candidates: list[Path] = []
 
-    for tests_dir in root.rglob("tests"):
-        if not tests_dir.is_dir():
-            continue
-        if any(part in _IGNORED_DIRS for part in tests_dir.parts):
-            continue
-        for path in tests_dir.rglob("*.py"):
-            if any(part in _IGNORED_DIRS for part in path.parts):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [
+            name for name in dirnames
+            if name not in _IGNORED_DIRS
+        ]
+
+        directory = Path(dirpath)
+        try:
+            relative_parts = directory.relative_to(root).parts
+        except ValueError:
+            relative_parts = ()
+        in_tests_directory = "tests" in relative_parts
+
+        for filename in filenames:
+            if not filename.endswith(".py"):
                 continue
-            candidates.add(path)
+            if not (
+                in_tests_directory
+                or filename.startswith("test_")
+                or filename.endswith("_test.py")
+            ):
+                continue
+
+            candidates.append(directory / filename)
             if len(candidates) >= max_files:
                 return sorted(candidates)
 
