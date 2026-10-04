@@ -146,7 +146,7 @@ Implemented:
 - conservative compatibility-risk candidates
 - Spyder Changes explorer with source navigation
 
-Implemented in the current branch:
+Also implemented:
 
 - generated request builder from FastAPI/OpenAPI contracts
 - dependency-derived auth/query/header inputs
@@ -156,7 +156,6 @@ Implemented in the current branch:
 
 Next:
 
-- request history and replay handoff
 - multipart/form support
 
 ### V0.3 - Debug requests
