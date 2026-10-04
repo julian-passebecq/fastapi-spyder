@@ -257,3 +257,21 @@ def test_request_template_builds_multipart_fields_and_file_inputs():
     assert fields["document"].is_file is True
     assert fields["document"].type_name == "file"
 
+def test_request_template_detects_multiple_upload_files():
+    app = FastAPI(title="Batch Upload API")
+
+    @app.post("/batch-upload")
+    async def batch_upload(
+        documents: list[UploadFile] = File(),
+    ):
+        return {"count": len(documents)}
+
+    api_map = inspect_app(app)
+    template = build_request_template(api_map, "POST /batch-upload")
+
+    assert template.body_content_type == "multipart/form-data"
+    fields = {field.name: field for field in template.body_fields}
+    assert fields["documents"].is_file is True
+    assert fields["documents"].multiple is True
+    assert fields["documents"].type_name == "file[]"
+
