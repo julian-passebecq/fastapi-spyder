@@ -232,6 +232,26 @@ class RequestLabWidget(QWidget):
 
         root.addWidget(self._result_tabs, 2)
 
+    def shutdown(self) -> None:
+        """Stop any isolated request process before Spyder closes."""
+
+        process = self._process
+        if process is None:
+            return
+
+        try:
+            process.finished.disconnect(self._request_finished)
+        except (TypeError, RuntimeError):
+            pass
+
+        process.kill()
+        process.waitForFinished(500)
+        process.deleteLater()
+        self._process = None
+        self._pending_payload = None
+        self._active_command = None
+        self._active_route_id = None
+
     def set_api_map(self, api_map: FastAPIMap) -> None:
         self._api_map = api_map
         current = self._route.currentText()
