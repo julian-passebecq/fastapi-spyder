@@ -12,7 +12,7 @@ from spyder_fastapi.models import (
     FastAPIMap,
     RouteTestIndex,
     SourceRef,
-    TestReference,
+    RouteTestReference,
 )
 
 
@@ -226,7 +226,7 @@ class _TestCallVisitor(ast.NodeVisitor):
     def __init__(self, file_path: Path, api_map: FastAPIMap):
         self.file_path = file_path
         self.api_map = api_map
-        self.references: list[TestReference] = []
+        self.references: list[RouteTestReference] = []
         self._classes: list[str] = []
         self._functions: list[tuple[str, int | None]] = []
 
@@ -270,7 +270,7 @@ class _TestCallVisitor(ast.NodeVisitor):
                     f"{method}:{route.id}"
                 )
                 self.references.append(
-                    TestReference(
+                    RouteTestReference(
                         id=ref_id,
                         route_id=route.id,
                         test_name=qualname,
@@ -307,7 +307,7 @@ def discover_route_tests(
         return RouteTestIndex()
 
     files = _candidate_test_files(root_path, max_files)
-    references: list[TestReference] = []
+    references: list[RouteTestReference] = []
 
     for file_path in files:
         try:
@@ -334,10 +334,10 @@ def discover_route_tests(
     )
 
 
-def tests_for_route(
+def route_tests(
     index: RouteTestIndex,
     route_id: str,
-) -> list[TestReference]:
+) -> list[RouteTestReference]:
     """Return all discovered test references for one FastAPI route."""
 
     return [
