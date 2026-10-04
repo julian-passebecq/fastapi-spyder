@@ -88,7 +88,7 @@ if screenshot_dir is not None:
     widget.show()
     qt_app.processEvents()
 
-def capture(name: str) -> None:
+def capture_widget(name: str) -> None:
     if screenshot_dir is None:
         return
     qt_app.processEvents()
@@ -255,11 +255,11 @@ assert (
     "Opened latest native telemetry for POST /v1/ingestions."
     in widget._status.text()
 )
-capture("telemetry")
+capture_widget("telemetry")
 
 widget._tabs.setCurrentWidget(widget._diagram)
 qt_app.processEvents()
-capture("diagram-runtime-lineage")
+capture_widget("diagram-runtime-lineage")
 
 widget._diagram._show_downstream.setChecked(False)
 assert all(
