@@ -453,6 +453,23 @@ class FastAPITelemetryWidget(QWidget):
         self._store = store
         self.refresh()
 
+    def select_trace(self, trace_id: str) -> bool:
+        """Focus one exact captured trace by OpenTelemetry trace id."""
+
+        if not trace_id:
+            return False
+
+        for index in range(self._traces.topLevelItemCount()):
+            item = self._traces.topLevelItem(index)
+            if item.data(0, _ROLE_TRACE_ID) != trace_id:
+                continue
+            self._traces.setCurrentItem(item)
+            item.setExpanded(True)
+            self._traces.scrollToItem(item)
+            self._tabs.setCurrentIndex(1)
+            return True
+        return False
+
     def select_route(self, route_id: str) -> bool:
         """Focus the latest captured trace for one FastAPI route."""
 
