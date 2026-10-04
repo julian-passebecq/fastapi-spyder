@@ -88,17 +88,23 @@ def execute_request(command: dict[str, Any]) -> RequestExecution:
     )
 
     started = time.perf_counter()
+    final_url = url
     try:
-        response = urlopen(request, timeout=timeout)
-        status_code = int(response.status)
-        reason = getattr(response, "reason", None) or HTTP_REASONS.get(status_code)
-        raw = response.read()
-        response_headers = dict(response.headers.items())
+        with urlopen(request, timeout=timeout) as response:
+            status_code = int(response.status)
+            reason = getattr(response, "reason", None) or HTTP_REASONS.get(status_code)
+            raw = response.read()
+            response_headers = dict(response.headers.items())
+            final_url = response.geturl()
     except HTTPError as exc:
-        status_code = int(exc.code)
-        reason = exc.reason or HTTP_REASONS.get(status_code)
-        raw = exc.read()
-        response_headers = dict(exc.headers.items()) if exc.headers else {}
+        try:
+            status_code = int(exc.code)
+            reason = exc.reason or HTTP_REASONS.get(status_code)
+            raw = exc.read()
+            response_headers = dict(exc.headers.items()) if exc.headers else {}
+            final_url = exc.geturl()
+        finally:
+            exc.close()
     except URLError as exc:
         elapsed_ms = (time.perf_counter() - started) * 1000
         return RequestExecution(
@@ -122,7 +128,7 @@ def execute_request(command: dict[str, Any]) -> RequestExecution:
             pass
 
     return RequestExecution(
-        url=url,
+        url=final_url,
         status_code=status_code,
         reason=str(reason) if reason is not None else None,
         headers=response_headers,
