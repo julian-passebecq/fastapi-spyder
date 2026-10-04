@@ -64,3 +64,44 @@ def test_debug_server_launcher_calls_uvicorn_without_reload(monkeypatch):
             },
         )
     ]
+
+
+def test_debug_server_configures_native_telemetry_before_uvicorn(
+    monkeypatch,
+    tmp_path,
+):
+    calls = []
+    telemetry_calls = []
+
+    fake_uvicorn = SimpleNamespace(
+        run=lambda *args, **kwargs: calls.append((args, kwargs))
+    )
+    monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
+
+    import spyder_fastapi.telemetry_capture as telemetry_capture
+
+    monkeypatch.setattr(
+        telemetry_capture,
+        "configure_native_telemetry",
+        lambda path: telemetry_calls.append(path)
+        or {"message": "capture ready"},
+    )
+
+    telemetry_file = tmp_path / "native.jsonl"
+    exit_code = main(
+        [
+            "service.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8124",
+            "--telemetry-file",
+            str(telemetry_file),
+        ]
+    )
+
+    assert exit_code == 0
+    assert telemetry_calls == [str(telemetry_file)]
+    assert calls[0][0] == ("service.main:app",)
+    assert calls[0][1]["port"] == 8124
+
