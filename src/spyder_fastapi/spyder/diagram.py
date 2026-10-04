@@ -178,6 +178,9 @@ class FastAPIDiagramWidget(QWidget):
         )
         self._render_current()
 
+    def set_show_tests(self, visible: bool) -> None:
+        self._show_tests.setChecked(bool(visible))
+
     def select_route(self, route_id: str) -> None:
         if self._api_map is None:
             return
