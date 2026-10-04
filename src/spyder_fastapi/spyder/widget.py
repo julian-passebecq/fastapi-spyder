@@ -834,7 +834,7 @@ class FastAPIStudioWidget(PluginMainWidget):
                 item.setData(0, _ROLE_ID, route.id)
                 self._set_item_source(item, route.source)
                 item.setToolTip(1, route.handler)
-                if route_tests:
+                if linked_tests:
                     item.setToolTip(
                         2,
                         "\n".join(test.test_name for test in linked_tests),
