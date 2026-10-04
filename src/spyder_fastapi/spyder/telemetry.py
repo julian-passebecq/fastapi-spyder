@@ -417,6 +417,7 @@ class FastAPITelemetryWidget(QWidget):
         self._waterfall = TraceWaterfall()
         waterfall_scroll = QScrollArea()
         waterfall_scroll.setWidgetResizable(True)
+        waterfall_scroll.setMinimumHeight(220)
         waterfall_scroll.setWidget(self._waterfall)
 
         trace_splitter = QSplitter(Qt.Vertical)
@@ -424,6 +425,7 @@ class FastAPITelemetryWidget(QWidget):
         trace_splitter.addWidget(waterfall_scroll)
         trace_splitter.setStretchFactor(0, 3)
         trace_splitter.setStretchFactor(1, 2)
+        trace_splitter.setSizes([340, 260])
 
         trace_page = QWidget()
         trace_layout = QVBoxLayout(trace_page)
