@@ -148,3 +148,11 @@ class APIDiff(BaseModel):
     affected_routes: list[str] = Field(default_factory=list)
     breaking_candidates: int = 0
 
+
+class SnapshotEnvelope(BaseModel):
+    """Versioned on-disk FastAPI Studio snapshot."""
+
+    format_version: int = 1
+    target: str | None = None
+    api: FastAPIMap
+
