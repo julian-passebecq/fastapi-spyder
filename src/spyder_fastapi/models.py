@@ -268,6 +268,7 @@ class DiagramNode(BaseModel):
     p95_ms: float | None = None
     last_ms: float | None = None
     target: str | None = None
+    trace_id: str | None = None
 
 
 class DiagramEdge(BaseModel):
