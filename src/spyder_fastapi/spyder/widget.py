@@ -322,6 +322,22 @@ class FastAPIStudioWidget(PluginMainWidget):
     def set_status_message(self, message: str) -> None:
         self._status.setText(message)
 
+    def shutdown(self) -> None:
+        """Terminate child processes owned by FastAPI Studio."""
+
+        process = self._process
+        if process is not None:
+            try:
+                process.finished.disconnect(self._inspection_finished)
+            except (TypeError, RuntimeError):
+                pass
+            process.kill()
+            process.waitForFinished(500)
+            process.deleteLater()
+            self._process = None
+
+        self._request_lab.shutdown()
+
     # --- Project/app discovery
     # ------------------------------------------------------------------
     def set_working_directory(self, path: str) -> None:
