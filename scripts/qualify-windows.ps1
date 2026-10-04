@@ -73,7 +73,7 @@ try {
     Assert-LastExitCode "pip check"
 
     Write-Host "Qualification environment:"
-    $EnvironmentInfo = & $PythonPath -c "import platform; from importlib.metadata import version; print(f'os={platform.platform()}'); print(f'python={platform.python_version()}'); print(f'spyder={version(""spyder"")}'); print(f'fastapi={version(""fastapi"")}'); print(f'fastapi-spyder={version(""fastapi-spyder"")}')"
+    $EnvironmentInfo = & $PythonPath -c 'import platform; from importlib.metadata import version; print("os=" + platform.platform()); print("python=" + platform.python_version()); print("spyder=" + version("spyder")); print("fastapi=" + version("fastapi")); print("fastapi-spyder=" + version("fastapi-spyder"))'
     Assert-LastExitCode "Read environment versions"
     $EnvironmentInfo | ForEach-Object { Write-Host "  $_" }
 
