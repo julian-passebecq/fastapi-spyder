@@ -11,6 +11,7 @@ from pathlib import Path
 from qtpy.QtCore import QProcess, QProcessEnvironment, Qt, Signal
 from qtpy.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -26,7 +27,13 @@ from qtpy.QtWidgets import (
 )
 from spyder.api.widgets.main_widget import PluginMainWidget
 
-from spyder_fastapi.core import diff_maps, discover_targets, impacted_routes
+from spyder_fastapi.core import (
+    diff_maps,
+    discover_targets,
+    impacted_routes,
+    load_snapshot,
+    save_snapshot,
+)
 from spyder_fastapi.models import APIDiff, FastAPIMap, SourceRef
 
 
@@ -149,6 +156,18 @@ class FastAPIStudioWidget(PluginMainWidget):
         )
         self._baseline_label.setWordWrap(True)
         changes_layout.addWidget(self._baseline_label)
+
+        snapshot_actions = QHBoxLayout()
+        self._save_snapshot_button = QPushButton("Save snapshot...")
+        self._save_snapshot_button.setEnabled(False)
+        self._save_snapshot_button.clicked.connect(self.save_snapshot_dialog)
+        snapshot_actions.addWidget(self._save_snapshot_button)
+
+        self._load_baseline_button = QPushButton("Load baseline...")
+        self._load_baseline_button.clicked.connect(self.load_baseline_dialog)
+        snapshot_actions.addWidget(self._load_baseline_button)
+        snapshot_actions.addStretch(1)
+        changes_layout.addLayout(snapshot_actions)
 
         self._changes_tree = QTreeWidget()
         self._changes_tree.setHeaderLabels(
@@ -438,6 +457,7 @@ class FastAPIStudioWidget(PluginMainWidget):
     def set_api_map(self, api_map: FastAPIMap) -> None:
         self._api_map = api_map
         self._baseline_button.setEnabled(True)
+        self._save_snapshot_button.setEnabled(True)
         self._populate_overview()
         self._populate_changes()
         self._populate_routes()
@@ -495,6 +515,60 @@ class FastAPIStudioWidget(PluginMainWidget):
         self._current_diff = None
         self._clear_baseline_button.setEnabled(False)
         self._populate_changes()
+
+    def save_snapshot_dialog(self) -> None:
+        if self._api_map is None:
+            self._status.setText("Inspect a FastAPI application before saving a snapshot.")
+            return
+
+        suggested = os.path.join(self._workdir, "fastapi-studio.snapshot.json")
+        path, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Save FastAPI Studio snapshot",
+            suggested,
+            "FastAPI Studio snapshot (*.json);;JSON files (*.json)",
+        )
+        if not path:
+            return
+
+        try:
+            destination = save_snapshot(
+                path,
+                self._api_map,
+                target=self._snapshot_key(),
+            )
+        except (OSError, ValueError) as exc:
+            self._status.setText(f"Could not save snapshot: {exc}")
+            self._diagnostics.appendPlainText(f"Snapshot save error: {exc}")
+            return
+
+        self._status.setText(f"Saved FastAPI snapshot: {destination}")
+
+    def load_baseline_dialog(self) -> None:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "Load FastAPI Studio baseline",
+            self._workdir,
+            "FastAPI Studio snapshot (*.json);;JSON files (*.json)",
+        )
+        if not path:
+            return
+
+        try:
+            envelope = load_snapshot(path)
+        except (OSError, ValueError) as exc:
+            self._status.setText(f"Could not load baseline snapshot: {exc}")
+            self._diagnostics.appendPlainText(f"Snapshot load error: {exc}")
+            return
+
+        self._baseline = envelope.api
+        self._baseline_target = envelope.target or envelope.api.title
+        self._current_diff = None
+        self._clear_baseline_button.setEnabled(True)
+        self._populate_changes()
+        self._status.setText(
+            f"Loaded baseline snapshot for {self._baseline_target}."
+        )
 
     def _populate_changes(self) -> None:
         self._changes_tree.clear()
