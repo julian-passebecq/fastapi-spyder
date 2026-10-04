@@ -84,9 +84,28 @@ History is intentionally not persisted yet. Authentication headers and cookie
 values are redacted in the history detail display, while the in-memory command
 retains them so exact replay remains exact.
 
-This provides the request-evidence layer needed for a later
-`Replay + breakpoint` workflow without prematurely coupling Request Lab to a
-server/debugger runtime.
+This provides the request-evidence layer needed for debugger integration
+without prematurely turning FastAPI Studio into a server runtime.
+
+## Spyder breakpoint handoff
+
+For the selected route, Request Lab resolves both the Python definition line and
+the first executable statement in the handler. **Set handler breakpoint** asks
+Spyder's existing Debugger/Editor breakpoint manager to place a breakpoint at
+that executable line, while preserving a breakpoint that is already present.
+
+The workflow is deliberately explicit:
+
+```text
+select route
+   -> Set handler breakpoint
+   -> run the FastAPI server under Spyder's debugger
+   -> Replay selected request
+```
+
+FastAPI Studio does not yet claim this is a one-click debug orchestration flow.
+The current slice is a Spyder-native breakpoint handoff plus exact replay; the
+server/debug-session lifecycle remains owned by Spyder.
 
 ## 422 visualizer
 
@@ -126,7 +145,7 @@ Not implemented yet:
 - persisted request history;
 - persisted secrets or auth profiles;
 - automatic server startup;
-- replay under a Spyder breakpoint.
+- one-click server start + replay under a managed Spyder breakpoint.
 
 Those belong to later slices rather than being hidden behind best-effort
 behavior.
