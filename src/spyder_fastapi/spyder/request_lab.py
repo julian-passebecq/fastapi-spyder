@@ -505,7 +505,17 @@ class RequestLabWidget(QWidget):
             name_item = QTableWidgetItem(field.name)
             type_item = QTableWidgetItem(field.type_name)
             required_item = QTableWidgetItem("yes" if field.required else "no")
-            value_item = QTableWidgetItem(_value_text(field.example))
+            if (
+                field.multiple
+                and not field.is_file
+                and isinstance(field.example, list)
+            ):
+                initial_value = "\n".join(
+                    _value_text(item) for item in field.example
+                )
+            else:
+                initial_value = _value_text(field.example)
+            value_item = QTableWidgetItem(initial_value)
 
             if field.python_name and field.python_name != field.name:
                 name_item.setToolTip(
@@ -552,6 +562,11 @@ class RequestLabWidget(QWidget):
 
             if field.description:
                 value_item.setToolTip(field.description)
+            if field.multiple and not field.is_file:
+                value_item.setToolTip(
+                    (value_item.toolTip() + "\n" if value_item.toolTip() else "")
+                    + "Use one repeated form value per line."
+                )
             if field.is_file:
                 has_file = True
                 value_item.setToolTip(
@@ -891,6 +906,17 @@ class RequestLabWidget(QWidget):
                         files[name] = paths
                     else:
                         files[name] = value
+                elif multiple:
+                    repeated_values = [
+                        item.strip()
+                        for item in value.splitlines()
+                        if item.strip()
+                    ]
+                    if required and not repeated_values:
+                        raise ValueError(
+                            f"Required repeated form field is empty: {name}"
+                        )
+                    values[name] = repeated_values
                 else:
                     values[name] = value
 
