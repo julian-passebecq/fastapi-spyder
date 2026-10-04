@@ -278,13 +278,31 @@ class FastAPIDiagramWidget(QWidget):
             self._focus.setCurrentIndex(focus_index)
 
     def fit_to_view(self) -> None:
+        """Fit the complete graph, even if that makes dense graphs small."""
+
         bounds = self._scene.itemsBoundingRect()
         if bounds.isEmpty():
             return
+        self._view.resetTransform()
         self._view.fitInView(
             bounds.adjusted(-40, -40, 40, 40),
             Qt.KeepAspectRatio,
         )
+
+    def _fit_readable_view(self) -> None:
+        """Open graphs at a readable minimum zoom while retaining pan."""
+
+        bounds = self._scene.itemsBoundingRect()
+        if bounds.isEmpty():
+            return
+
+        self.fit_to_view()
+        scale = self._view.transform().m11()
+        minimum_scale = 0.72
+        if scale < minimum_scale:
+            self._view.resetTransform()
+            self._view.scale(minimum_scale, minimum_scale)
+            self._view.centerOn(bounds.center())
 
     def reset_zoom(self) -> None:
         self._view.resetTransform()
@@ -430,7 +448,7 @@ class FastAPIDiagramWidget(QWidget):
             f"{runtime_suffix}"
             f"{downstream_suffix}"
         )
-        self.fit_to_view()
+        self._fit_readable_view()
 
         if projection.focus_id:
             self._node_selected(projection.focus_id)
