@@ -96,6 +96,7 @@ The repository now contains the v0.1 foundation:
 - recursive `Depends()` discovery, including dependency request parameters
 - Python source file + line mapping and double-click editor navigation
 - route-scoped lineage tree
+- native Qt Diagram tab with route-flow, global-architecture and impact views
 - dependency and schema blast-radius views
 - serializable `FastAPIMap` JSON bridge
 - diagnostics view for import/inspection output
@@ -117,6 +118,40 @@ pip install -e ".[dev]"
 PYTHONPATH=examples/bookstore fastapi-spyder app:app
 ```
 
+## Interactive architecture diagrams
+
+FastAPI Studio renders the same deterministic `FastAPIMap` through a native
+Qt graphics view. No browser engine or separate JavaScript graph runtime is
+required.
+
+Three projections are available:
+
+```text
+Route flow
+  one HTTP route
+      -> parameters / models
+      -> Depends() tree
+      -> handler
+      -> response model
+
+Global architecture
+  all routes
+      -> handlers
+      -> shared dependencies
+      -> request/response models
+  request parameter nodes are compacted to keep the map readable
+
+Impact / blast radius
+  every real lineage path
+  from affected routes
+      -> selected dependency or model
+```
+
+Nodes support pan/zoom, details, impact counts and double-click navigation back
+to Python source. The projection layer is headless and tested independently
+from Qt, so later runtime timing/telemetry can enrich the same diagram instead
+of creating a second graph model.
+
 ## Product roadmap
 
 ### V0.1 - Understand
@@ -129,6 +164,7 @@ Implemented in the bootstrap branch:
 - Pydantic/OpenAPI model browser
 - dependency browser + blast radius
 - contract/dependency lineage
+- interactive architecture diagrams with pan/zoom and source navigation
 - source navigation
 - normalized JSON view
 
