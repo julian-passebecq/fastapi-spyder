@@ -66,6 +66,21 @@ def _field_type(field: Any) -> Any:
     return getattr(field_info, "annotation", None)
 
 
+def _field_required(field: Any) -> bool:
+    """Resolve whether a FastAPI/Pydantic compatibility field is required."""
+
+    required = getattr(field, "required", None)
+    if required is not None:
+        return bool(required)
+
+    field_info = getattr(field, "field_info", None)
+    is_required = getattr(field_info, "is_required", None)
+    if callable(is_required):
+        return bool(is_required())
+
+    return False
+
+
 def _source_ref(call: Callable[..., Any] | Any) -> SourceRef:
     if call is None:
         return SourceRef()
@@ -144,7 +159,7 @@ def _dependant_parameters(dependant: Any) -> list[ParameterSpec]:
                     name=field.name,
                     location=location,
                     type_name=_type_name(_field_type(field)),
-                    required=bool(getattr(field, "required", False)),
+                    required=_field_required(field),
                 )
             )
     return params
