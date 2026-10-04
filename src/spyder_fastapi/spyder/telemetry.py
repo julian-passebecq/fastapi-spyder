@@ -11,6 +11,8 @@ from qtpy.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
+    QSplitter,
     QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -24,6 +26,7 @@ from spyder_fastapi.models import NativeTelemetrySpan
 
 _ROLE_ROUTE_ID = 40
 _ROLE_TRACE_ID = 41
+_ROLE_FUNCTION = 42
 
 
 def _ms(value: float | None) -> str:
@@ -128,6 +131,189 @@ class TelemetryTimeline(QWidget):
             )
 
 
+class TraceWaterfall(QWidget):
+    """Native Qt span waterfall for one OpenTelemetry trace."""
+
+    _ROW_HEIGHT = 28
+    _TOP = 34
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._rows: list[tuple[NativeTelemetrySpan, int]] = []
+        self.setMinimumHeight(140)
+
+    @staticmethod
+    def _failed(span: NativeTelemetrySpan) -> bool:
+        return (
+            span.status == "ERROR"
+            or "error.type" in span.attributes
+        )
+
+    @staticmethod
+    def _ordered_rows(
+        spans: list[NativeTelemetrySpan],
+    ) -> list[tuple[NativeTelemetrySpan, int]]:
+        if not spans:
+            return []
+
+        by_parent: dict[str | None, list[NativeTelemetrySpan]] = defaultdict(list)
+        ids = {span.span_id for span in spans}
+        for span in spans:
+            by_parent[span.parent_span_id].append(span)
+
+        roots = [
+            span
+            for span in spans
+            if span.parent_span_id is None
+            or span.parent_span_id not in ids
+        ]
+        roots.sort(
+            key=lambda span: (
+                0 if span.kind.upper() == "SERVER" else 1,
+                span.start_ns,
+                span.name,
+            )
+        )
+
+        result: list[tuple[NativeTelemetrySpan, int]] = []
+        seen: set[str] = set()
+
+        def visit(span: NativeTelemetrySpan, depth: int) -> None:
+            if span.span_id in seen:
+                return
+            seen.add(span.span_id)
+            result.append((span, depth))
+            children = sorted(
+                by_parent.get(span.span_id, []),
+                key=lambda child: (child.start_ns, child.end_ns, child.name),
+            )
+            for child in children:
+                visit(child, depth + 1)
+
+        for root in roots:
+            visit(root, 0)
+
+        for span in sorted(spans, key=lambda item: (item.start_ns, item.end_ns)):
+            if span.span_id not in seen:
+                visit(span, 0)
+
+        return result
+
+    def set_trace(self, spans: list[NativeTelemetrySpan]) -> None:
+        self._rows = self._ordered_rows(list(spans))
+        self.setMinimumHeight(
+            max(140, self._TOP + len(self._rows) * self._ROW_HEIGHT + 28)
+        )
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        palette = self.palette()
+
+        if not self._rows:
+            painter.setPen(palette.text().color())
+            painter.drawText(
+                self.rect(),
+                Qt.AlignCenter,
+                "Select a trace to render its native FastAPI spans",
+            )
+            return
+
+        spans = [span for span, _depth in self._rows]
+        start_ns = min(span.start_ns for span in spans)
+        end_ns = max(span.end_ns for span in spans)
+        total_ns = max(1, end_ns - start_ns)
+        total_ms = total_ns / 1_000_000
+
+        label_width = min(320.0, max(190.0, self.width() * 0.34))
+        right_margin = 18.0
+        timeline_left = label_width
+        timeline_width = max(80.0, self.width() - label_width - right_margin)
+
+        painter.setPen(QPen(palette.mid().color(), 1))
+        for fraction in (0.0, 0.25, 0.5, 0.75, 1.0):
+            x = timeline_left + timeline_width * fraction
+            painter.drawLine(
+                QPointF(x, self._TOP - 8),
+                QPointF(
+                    x,
+                    self._TOP + len(self._rows) * self._ROW_HEIGHT,
+                ),
+            )
+            painter.setPen(palette.text().color())
+            painter.drawText(
+                QRectF(x - 30, 4, 60, 20),
+                Qt.AlignCenter,
+                f"{total_ms * fraction:.1f}",
+            )
+            painter.setPen(QPen(palette.mid().color(), 1))
+
+        painter.setPen(palette.text().color())
+        painter.drawText(
+            QRectF(timeline_left, 4, timeline_width, 20),
+            Qt.AlignRight | Qt.AlignVCenter,
+            "ms",
+        )
+
+        for index, (span, depth) in enumerate(self._rows):
+            y = self._TOP + index * self._ROW_HEIGHT
+            center_y = y + self._ROW_HEIGHT / 2
+
+            function = span.attributes.get("code.function.name")
+            label = span.name
+            if function and span.name.startswith("fastapi."):
+                label += f" · {str(function).rsplit('.', 1)[-1]}"
+            label = ("  " * min(depth, 5)) + label
+
+            painter.setPen(palette.text().color())
+            painter.drawText(
+                QRectF(6, y, label_width - 14, self._ROW_HEIGHT),
+                Qt.AlignLeft | Qt.AlignVCenter,
+                label,
+            )
+
+            x = timeline_left + (
+                (span.start_ns - start_ns) / total_ns
+            ) * timeline_width
+            width = max(
+                2.0,
+                (max(0, span.end_ns - span.start_ns) / total_ns)
+                * timeline_width,
+            )
+            bar = QRectF(
+                x,
+                center_y - 7,
+                width,
+                14,
+            )
+
+            brush = (
+                palette.highlight()
+                if span.kind.upper() == "SERVER"
+                else palette.alternateBase()
+            )
+            painter.fillRect(bar, brush)
+            painter.setPen(
+                QPen(
+                    palette.text().color()
+                    if self._failed(span)
+                    else palette.mid().color(),
+                    2 if self._failed(span) else 1,
+                )
+            )
+            painter.drawRect(bar)
+
+            if width >= 52:
+                painter.setPen(palette.text().color())
+                painter.drawText(
+                    bar.adjusted(4, -1, -4, 1),
+                    Qt.AlignRight | Qt.AlignVCenter,
+                    f"{span.duration_ms:.1f}",
+                )
+
+
 class _KpiBox(QGroupBox):
     def __init__(self, title: str, parent=None):
         super().__init__(title, parent)
@@ -145,6 +331,7 @@ class FastAPITelemetryWidget(QWidget):
 
     sig_clear = Signal()
     sig_route_selected = Signal(str)
+    sig_function_selected = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -165,6 +352,8 @@ class FastAPITelemetryWidget(QWidget):
         self._requests = _KpiBox("Requests")
         self._errors = _KpiBox("Errors")
         self._error_rate = _KpiBox("Error rate")
+        self._validation = _KpiBox("Validation")
+        self._exceptions = _KpiBox("Exceptions")
         self._average = _KpiBox("Average")
         self._p50 = _KpiBox("P50")
         self._p95 = _KpiBox("P95")
@@ -172,6 +361,8 @@ class FastAPITelemetryWidget(QWidget):
             self._requests,
             self._errors,
             self._error_rate,
+            self._validation,
+            self._exceptions,
             self._average,
             self._p50,
             self._p95,
@@ -188,6 +379,7 @@ class FastAPITelemetryWidget(QWidget):
                 "Requests",
                 "Errors",
                 "Error %",
+                "Validation",
                 "Average",
                 "P50",
                 "P95",
@@ -202,7 +394,24 @@ class FastAPITelemetryWidget(QWidget):
             ["Trace / span", "Kind", "Duration", "Status", "Function"]
         )
         self._traces.setRootIsDecorated(True)
+        self._traces.currentItemChanged.connect(self._trace_selected)
         self._traces.itemDoubleClicked.connect(self._trace_activated)
+
+        self._waterfall = TraceWaterfall()
+        waterfall_scroll = QScrollArea()
+        waterfall_scroll.setWidgetResizable(True)
+        waterfall_scroll.setWidget(self._waterfall)
+
+        trace_splitter = QSplitter(Qt.Vertical)
+        trace_splitter.addWidget(self._traces)
+        trace_splitter.addWidget(waterfall_scroll)
+        trace_splitter.setStretchFactor(0, 3)
+        trace_splitter.setStretchFactor(1, 2)
+
+        trace_page = QWidget()
+        trace_layout = QVBoxLayout(trace_page)
+        trace_layout.setContentsMargins(0, 0, 0, 0)
+        trace_layout.addWidget(trace_splitter)
 
         self._logs = QTreeWidget()
         self._logs.setRootIsDecorated(False)
@@ -212,7 +421,7 @@ class FastAPITelemetryWidget(QWidget):
 
         tabs = QTabWidget()
         tabs.addTab(self._routes, "Routes")
-        tabs.addTab(self._traces, "Traces / waterfall")
+        tabs.addTab(trace_page, "Traces / waterfall")
         tabs.addTab(self._logs, "FastAPI logs")
 
         layout = QVBoxLayout(self)
@@ -239,6 +448,8 @@ class FastAPITelemetryWidget(QWidget):
             if requests
             else "-"
         )
+        self._validation.set_value(str(store.validation_failure_count()))
+        self._exceptions.set_value(str(store.exception_count()))
         self._average.set_value(_ms(store.average_latency_ms()))
         self._p50.set_value(_ms(store.latency_percentile(0.50)))
         self._p95.set_value(_ms(store.latency_percentile(0.95)))
@@ -279,6 +490,7 @@ class FastAPITelemetryWidget(QWidget):
                     str(summary.request_count),
                     str(summary.error_count),
                     f"{summary.error_rate * 100:.1f}%",
+                    str(summary.validation_failure_count),
                     _ms(summary.average_ms),
                     _ms(summary.p50_ms),
                     _ms(summary.p95_ms),
@@ -302,7 +514,14 @@ class FastAPITelemetryWidget(QWidget):
         return str(value) if value is not None else "-"
 
     def _populate_traces(self) -> None:
+        selected_trace = None
+        current = self._traces.currentItem()
+        if current is not None:
+            selected_trace = current.data(0, _ROLE_TRACE_ID)
+
         self._traces.clear()
+        selected_item = None
+        first_item = None
 
         for trace_id in self._store.trace_ids()[:50]:
             spans = self._store.trace_spans(trace_id)
@@ -335,6 +554,10 @@ class FastAPITelemetryWidget(QWidget):
             root_item.setData(0, _ROLE_ROUTE_ID, route_id)
             root_item.setToolTip(0, trace_id)
             self._traces.addTopLevelItem(root_item)
+            if first_item is None:
+                first_item = root_item
+            if selected_trace == trace_id:
+                selected_item = root_item
 
             def add_children(parent_item, parent_span_id: str) -> None:
                 children = sorted(
@@ -353,6 +576,9 @@ class FastAPITelemetryWidget(QWidget):
                     )
                     child.setData(0, _ROLE_TRACE_ID, trace_id)
                     child.setData(0, _ROLE_ROUTE_ID, route_id)
+                    function_name = self._span_function(span)
+                    if function_name != "-":
+                        child.setData(0, _ROLE_FUNCTION, function_name)
                     parent_item.addChild(child)
                     add_children(child, span.span_id)
 
@@ -361,6 +587,12 @@ class FastAPITelemetryWidget(QWidget):
 
         for column in range(self._traces.columnCount()):
             self._traces.resizeColumnToContents(column)
+
+        target = selected_item or first_item
+        if target is not None:
+            self._traces.setCurrentItem(target)
+        else:
+            self._waterfall.set_trace([])
 
     def _populate_logs(self) -> None:
         self._logs.clear()
@@ -387,7 +619,28 @@ class FastAPITelemetryWidget(QWidget):
         if route_id:
             self.sig_route_selected.emit(str(route_id))
 
+    def _trace_selected(
+        self,
+        item: QTreeWidgetItem | None,
+        _previous,
+    ) -> None:
+        if item is None:
+            self._waterfall.set_trace([])
+            return
+        trace_id = item.data(0, _ROLE_TRACE_ID)
+        if not trace_id:
+            self._waterfall.set_trace([])
+            return
+        self._waterfall.set_trace(
+            self._store.trace_spans(str(trace_id))
+        )
+
     def _trace_activated(self, item: QTreeWidgetItem, _column: int) -> None:
+        function_name = item.data(0, _ROLE_FUNCTION)
+        if function_name:
+            self.sig_function_selected.emit(str(function_name))
+            return
+
         route_id = item.data(0, _ROLE_ROUTE_ID)
         if route_id:
             self.sig_route_selected.emit(str(route_id))
