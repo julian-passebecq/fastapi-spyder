@@ -164,7 +164,11 @@ try {
     Write-Host ""
     Write-Host "Launching Spyder with data_platform_demo as the working directory..."
 
-    Start-Process -FilePath $SpyderPath -WorkingDirectory $DemoRoot
+    $SpyderArguments = @(
+        "--workdir",
+        ('"{0}"' -f $DemoRoot)
+    )
+    Start-Process -FilePath $SpyderPath -ArgumentList $SpyderArguments -WorkingDirectory $DemoRoot
 }
 finally {
     Pop-Location
