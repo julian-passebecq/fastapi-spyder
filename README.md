@@ -118,6 +118,7 @@ The repository now contains the v0.1 foundation:
 - handler/dependency anchoring when native trace parentage resolves it safely
 - Diagram runtime-node drilldown to the exact contributing Telemetry trace
 - validation and exception KPIs kept separate from 5xx error rate
+- exception-log source correlation: Telemetry shows the resolved FastAPI function and double-click opens it in Spyder
 - native latency timeline without Grafana, WebEngine or a separate frontend
 - Spyder-native handler breakpoint handoff using the first executable line
 - local uvicorn launch through Spyder's public debugfile/IPython Console API
@@ -404,11 +405,12 @@ Implemented foundation:
 - automatic replay as soon as the debug server starts listening
 - explicit cancellation of a pending debug replay
 - targeted Stop debug server action that interrupts only the Spyder shell used for that launch
+- native exception-log -> trace -> FastAPI operation -> Spyder source navigation
 
 Next:
 
-- exception -> source navigation
-- Variable Explorer integration
+- real-user qualification that the native Spyder breakpoint exposes the expected
+  handler frame and locals in Variable Explorer
 
 ### V0.4 - Observe locally
 
