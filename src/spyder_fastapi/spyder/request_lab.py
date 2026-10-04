@@ -362,6 +362,8 @@ class RequestLabWidget(QWidget):
             self._debug_server_available
             and bool(self._app_target)
             and self._api_map is not None
+            and self._process is None
+            and self._debug_replay_command is None
         )
 
     def set_python_executable(self, path: str) -> None:
@@ -619,6 +621,15 @@ class RequestLabWidget(QWidget):
         )
 
     def _start_debug_server(self) -> None:
+        if self._process is not None:
+            self.sig_status.emit(
+                "Wait for the active Request Lab request to finish before "
+                "starting a debug replay."
+            )
+            return
+        if self._debug_replay_command is not None:
+            self.sig_status.emit("A debug replay is already waiting for the server.")
+            return
         if not self._debug_server_available:
             self.sig_status.emit(
                 "Spyder IPython Console is not available for debug-server launch."
@@ -655,6 +666,8 @@ class RequestLabWidget(QWidget):
         )
         self._debug_probe_attempts = 0
         self._cancel_debug_wait.setEnabled(True)
+        self._send.setEnabled(False)
+        self._update_debug_server_enabled()
 
         self.sig_start_debug_server.emit(
             self._app_target,
@@ -714,6 +727,7 @@ class RequestLabWidget(QWidget):
         self._debug_replay_command = None
         self._debug_replay_route_id = None
         self._cancel_debug_wait.setEnabled(False)
+        self._update_debug_server_enabled()
 
         self.sig_status.emit(
             "FastAPI debug server is listening. Replaying the selected request."
@@ -728,6 +742,8 @@ class RequestLabWidget(QWidget):
         self._debug_replay_route_id = None
         self._debug_probe_attempts = 0
         self._cancel_debug_wait.setEnabled(False)
+        self._send.setEnabled(self._template is not None and self._process is None)
+        self._update_debug_server_enabled()
 
         if was_waiting and not silent:
             self.sig_status.emit("Cancelled debug-server readiness wait and replay.")
@@ -916,6 +932,7 @@ class RequestLabWidget(QWidget):
         self._validation_summary.setText("Waiting for response...")
         self._send.setEnabled(False)
         self._replay_history.setEnabled(False)
+        self._update_debug_server_enabled()
 
         process = QProcess(self)
         process.setWorkingDirectory(self._workdir)
@@ -1033,6 +1050,7 @@ class RequestLabWidget(QWidget):
                 process.deleteLater()
             self._process = None
             self._update_replay_enabled()
+            self._update_debug_server_enabled()
 
     def _render_result(
         self,
