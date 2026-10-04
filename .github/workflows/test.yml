@@ -93,7 +93,19 @@ jobs:
               return {"ready": True}
 
           qt_app = QApplication.instance() or QApplication([])
+          project_temp = TemporaryDirectory()
+          project_root = Path(project_temp.name)
+          tests_dir = project_root / "tests"
+          tests_dir.mkdir()
+          (tests_dir / "test_smoke_api.py").write_text(
+              "def test_health(client):\n"
+              "    response = client.get('/health')\n"
+              "    assert response.status_code == 200\n",
+              encoding="utf-8",
+          )
+
           widget = FastAPIStudioWidget("fastapi_studio", None)
+          widget.set_working_directory(project_root)
           widget.set_api_map(inspect_app(before))
 
           assert FastAPIStudioPlugin.NAME == "fastapi_studio"
@@ -105,6 +117,16 @@ jobs:
           assert widget._diagram._projection is not None
           assert widget._diagram._projection.mode == "route"
           assert widget._diagram._node_items
+
+          assert len(widget._test_index.references) == 1
+          assert widget._tests_tree.topLevelItemCount() == 1
+          assert widget._test_index.references[0].route_id == "GET /health"
+
+          widget._diagram.set_show_tests(True)
+          assert any(
+              node.kind == "test"
+              for node in widget._diagram._projection.nodes
+          )
 
           global_index = widget._diagram._mode.findData("global")
           widget._diagram._mode.setCurrentIndex(global_index)
@@ -234,6 +256,7 @@ jobs:
 
           widget.shutdown()
           widget.close()
+          project_temp.cleanup()
           qt_app.processEvents()
           print("FastAPI Studio widget smoke test passed")
           PY
