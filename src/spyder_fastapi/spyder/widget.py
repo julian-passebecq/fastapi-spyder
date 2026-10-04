@@ -771,24 +771,33 @@ class FastAPIStudioWidget(PluginMainWidget):
             if len(impacted_routes(self._api_map, f"model:{model.name}")) > 1:
                 shared_models += 1
 
+        linked_test_routes = {
+            reference.route_id
+            for reference in self._test_index.references
+        }
+
         self._overview.setHtml(
             "<h3>{}</h3>"
             "<p><b>Version:</b> {}<br>"
             "<b>OpenAPI:</b> {}<br>"
             "<b>Routes:</b> {}<br>"
             "<b>Models:</b> {}<br>"
-            "<b>Dependencies:</b> {}</p>"
+            "<b>Dependencies:</b> {}<br>"
+            "<b>Routes with static test links:</b> {} / {}</p>"
             "<p><b>Shared dependency blast-radius nodes:</b> {}<br>"
             "<b>Shared schema blast-radius nodes:</b> {}</p>"
             "<p>The lineage view is derived from FastAPI's actual route, "
-            "Pydantic and Depends() structures. Double-click source-backed "
-            "nodes to open their Python implementation.</p>".format(
+            "Pydantic and Depends() structures. Test links are static project "
+            "evidence and are not execution-coverage claims. Double-click "
+            "source-backed nodes to open their Python implementation.</p>".format(
                 self._api_map.title,
                 self._api_map.version or "-",
                 self._api_map.openapi_version,
                 len(self._api_map.routes),
                 len(self._api_map.models),
                 len(self._api_map.dependencies),
+                len(linked_test_routes),
+                len(self._api_map.routes),
                 shared_dependencies,
                 shared_models,
             )
