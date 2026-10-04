@@ -111,6 +111,8 @@ The repository now contains the v0.1 foundation:
 - native FastAPI OpenTelemetry dashboard for server traces and FastAPI logs
 - per-route request/error/average/P50/P95 summaries from native server spans
 - request trace tree with FastAPI dependency/endpoint/serialization spans
+- graphical native trace waterfall with relative span timing
+- validation and exception KPIs kept separate from 5xx error rate
 - native latency timeline without Grafana, WebEngine or a separate frontend
 - Spyder-native handler breakpoint handoff using the first executable line
 - local uvicorn launch through Spyder's public debugfile/IPython Console API
@@ -304,9 +306,11 @@ Implemented:
 - FastAPI native operation spans for dependency resolution, endpoint execution,
   response serialization and background tasks
 - native FastAPI validation/error logs linked to traces when available
-- Telemetry dashboard with request/error KPIs, average/P50/P95, per-route
-  summaries, recent latency timeline and trace/waterfall tree
+- Telemetry dashboard with request/error/validation/exception KPIs,
+  average/P50/P95, per-route summaries and recent latency timeline
+- trace tree plus native graphical waterfall for relative server/operation timing
 - double-click route/trace -> corresponding architecture diagram
+- double-click source-backed operation spans -> Python source when resolvable
 - ephemeral local JSONL bridge with bounded in-memory ingestion
 - explicit clear lifecycle for both client and native telemetry
 
@@ -320,7 +324,6 @@ for the local dashboard.
 
 Next:
 
-- richer graphical trace-waterfall bars
 - project/vendor child spans (SQL/HTTP/etc.) when those libraries already emit
   OpenTelemetry spans
 - optional native FastAPI metrics signal for active requests
