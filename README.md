@@ -116,7 +116,7 @@ The repository now contains the v0.1 foundation:
 - external-span targets surfaced directly in trace trees and waterfalls
 - observed downstream runtime-lineage overlay on the same architecture Diagram
 - handler/dependency anchoring when native trace parentage resolves it safely
-- Diagram runtime-node drilldown to the latest matching Telemetry trace
+- Diagram runtime-node drilldown to the exact contributing Telemetry trace
 - validation and exception KPIs kept separate from 5xx error rate
 - native latency timeline without Grafana, WebEngine or a separate frontend
 - Spyder-native handler breakpoint handoff using the first executable line
@@ -295,8 +295,9 @@ span to the nearest deterministic node:
 
 The **Observed I/O** toggle removes this runtime layer without changing the
 static graph. Double-clicking an observed runtime node opens the Telemetry tab
-on the latest captured trace for that route, so the diagram remains a map into
-the underlying evidence rather than a dead-end visualization.
+on the latest captured trace that actually contributed to that runtime node,
+so the diagram remains a map into the underlying evidence rather than a
+dead-end visualization.
 
 ## Interactive architecture diagrams
 
