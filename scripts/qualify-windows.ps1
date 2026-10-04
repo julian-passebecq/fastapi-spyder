@@ -81,6 +81,10 @@ try {
     & $PythonPath -c "from spyder.app.find_plugins import find_external_plugins; plugins=find_external_plugins(); assert plugins.get('fastapi_studio') is not None, plugins; print('plugin_discovery=PASS')"
     Assert-LastExitCode "Spyder plugin discovery"
 
+    Write-Host "Verifying Spyder debug/editor compatibility contract..."
+    & $PythonPath -c "from spyder_fastapi.spyder.compat import spyder_contract_issues, variable_explorer_available; issues=spyder_contract_issues(); assert not issues, issues; assert variable_explorer_available(), 'Variable Explorer unavailable'; print('spyder_debug_contract=PASS'); print('variable_explorer=PASS')"
+    Assert-LastExitCode "Spyder debug/editor compatibility contract"
+
     if (-not $SkipTests) {
         Write-Host "Running the realistic demo tests..."
         & $PythonPath -m pytest -q "examples\data_platform_demo\tests"
@@ -118,6 +122,8 @@ try {
         "",
         "- PASS - dependency health (pip check)",
         "- PASS - Spyder external plugin discovery",
+        "- PASS - Spyder debug/editor compatibility contract",
+        "- PASS - native Variable Explorer availability",
         $(if ($SkipTests) { "- SKIPPED - demo tests" } else { "- PASS - demo tests" }),
         "",
         "## Human-only checks",
