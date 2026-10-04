@@ -318,3 +318,19 @@ def test_form_and_file_422_issues_map_to_request_fields():
     assert issues[1].source is not None
     assert issues[1].source.qualname.endswith(".upload_validation")
 
+def test_request_template_detects_repeated_form_values():
+    app = FastAPI(title="Repeated Form API")
+
+    @app.post("/tags")
+    def tags(values: list[str] = Form()):
+        return {"values": values}
+
+    api_map = inspect_app(app)
+    template = build_request_template(api_map, "POST /tags")
+
+    assert template.body_content_type == "application/x-www-form-urlencoded"
+    fields = {field.name: field for field in template.body_fields}
+    assert fields["values"].multiple is True
+    assert fields["values"].is_file is False
+    assert fields["values"].type_name == "string[]"
+
