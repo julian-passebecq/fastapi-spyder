@@ -105,3 +105,36 @@ def test_debug_server_configures_native_telemetry_before_uvicorn(
     assert calls[0][0] == ("service.main:app",)
     assert calls[0][1]["port"] == 8124
 
+
+def test_debug_server_continues_when_telemetry_setup_fails(
+    monkeypatch,
+    tmp_path,
+):
+    calls = []
+    fake_uvicorn = SimpleNamespace(
+        run=lambda *args, **kwargs: calls.append((args, kwargs))
+    )
+    monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
+
+    import spyder_fastapi.telemetry_capture as telemetry_capture
+
+    def fail_capture(_path):
+        raise RuntimeError("telemetry boom")
+
+    monkeypatch.setattr(
+        telemetry_capture,
+        "configure_native_telemetry",
+        fail_capture,
+    )
+
+    exit_code = main(
+        [
+            "service.main:app",
+            "--telemetry-file",
+            str(tmp_path / "native.jsonl"),
+        ]
+    )
+
+    assert exit_code == 0
+    assert calls
+
