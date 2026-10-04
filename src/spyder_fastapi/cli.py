@@ -1,10 +1,12 @@
-"""Headless inspection command used by tests, CI and eventually the Spyder UI."""
+"""Headless inspection command used by tests, CI and the Spyder UI."""
 
 from __future__ import annotations
 
 import argparse
 import importlib
+import io
 import sys
+from contextlib import redirect_stderr, redirect_stdout
 from typing import Any
 
 from fastapi import FastAPI
@@ -25,6 +27,23 @@ def load_app(target: str) -> FastAPI:
     return app
 
 
+def inspect_target(target: str):
+    """Inspect a target while keeping stdout clean for machine-readable JSON.
+
+    User modules sometimes print during import or OpenAPI construction. The
+    Spyder UI consumes stdout as JSON, so application output is captured and
+    forwarded to stderr instead.
+    """
+
+    captured_stdout = io.StringIO()
+    captured_stderr = io.StringIO()
+    with redirect_stdout(captured_stdout), redirect_stderr(captured_stderr):
+        model = inspect_app(load_app(target))
+
+    noise = captured_stdout.getvalue() + captured_stderr.getvalue()
+    return model, noise
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fastapi-spyder",
@@ -40,10 +59,17 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        model = inspect_app(load_app(args.app))
-    except (ImportError, AttributeError, TypeError, ValueError) as exc:
-        print(f"fastapi-spyder: {exc}", file=sys.stderr)
+        model, noise = inspect_target(args.app)
+    except Exception as exc:  # User application imports may raise arbitrary errors.
+        print(
+            f"fastapi-spyder: {exc.__class__.__name__}: {exc}",
+            file=sys.stderr,
+        )
         return 2
+
+    if noise:
+        print("[application output captured during inspection]", file=sys.stderr)
+        print(noise.rstrip(), file=sys.stderr)
 
     print(model.model_dump_json(by_alias=True, indent=args.indent))
     return 0
