@@ -50,6 +50,7 @@ jobs:
           from qtpy.QtWidgets import QApplication
 
           from spyder_fastapi.core import inspect_app
+          from spyder_fastapi.models import RequestExecution
           from spyder_fastapi.spyder.plugin import FastAPIStudioPlugin
           from spyder_fastapi.spyder.widget import FastAPIStudioWidget
 
@@ -80,6 +81,27 @@ jobs:
           assert widget._routes_tree.topLevelItemCount() == 1
           assert widget._dependencies_tree.topLevelItemCount() == 1
           assert widget._lineage_tree.topLevelItemCount() == 1
+          assert widget._request_lab._route.currentText() == "GET /health"
+          assert widget._request_lab._parameters.rowCount() == 1
+
+          widget._request_lab._render_result(
+              RequestExecution(
+                  url="http://127.0.0.1:8000/health",
+                  status_code=422,
+                  reason="Unprocessable Entity",
+                  json_body={
+                      "detail": [
+                          {
+                              "type": "missing",
+                              "loc": ["header", "token"],
+                              "msg": "Field required",
+                              "input": None,
+                          }
+                      ]
+                  },
+              )
+          )
+          assert widget._request_lab._validation.topLevelItemCount() == 1
 
           widget.set_baseline()
           widget.set_api_map(inspect_app(after))
