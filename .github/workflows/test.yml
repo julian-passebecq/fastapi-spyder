@@ -102,6 +102,27 @@ jobs:
           assert widget._dependencies_tree.topLevelItemCount() == 1
           assert widget._lineage_tree.topLevelItemCount() == 1
           assert widget._request_lab._route.currentText() == "GET /health"
+          assert widget._diagram._projection is not None
+          assert widget._diagram._projection.mode == "route"
+          assert widget._diagram._node_items
+
+          global_index = widget._diagram._mode.findData("global")
+          widget._diagram._mode.setCurrentIndex(global_index)
+          assert widget._diagram._projection.mode == "global"
+          assert all(
+              node.kind != "parameter"
+              for node in widget._diagram._projection.nodes
+          )
+
+          dependency_id = widget._api_map.dependencies[0].id
+          widget._diagram.focus_node(dependency_id)
+          assert widget._diagram._projection.mode == "impact"
+          assert widget._diagram._projection.focus_id == dependency_id
+          assert "route:GET /health" in widget._diagram._projection.roots
+
+          widget._diagram.select_route("GET /health")
+          assert widget._diagram._projection.mode == "route"
+          assert widget._request_lab._route.currentText() == "GET /health"
           assert widget._request_lab._parameters.rowCount() == 1
 
           widget._request_lab.select_route("POST /upload")
