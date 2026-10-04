@@ -335,6 +335,7 @@ assert any(
 )
 
 widget.set_working_directory(project_root)
+widget._loaded_workdir = str(project_root)
 widget.set_api_map(inspect_app(before))
 widget._diagram.select_route("GET /health")
 
@@ -412,6 +413,7 @@ widget._request_lab._debug_server.click()
 assert debug_launches
 assert widget._request_lab._cancel_debug_wait.isEnabled()
 assert debug_launches[0][0] == "service.main:app"
+assert Path(debug_launches[0][1]).resolve() == project_root
 assert debug_launches[0][2:] == ("127.0.0.1", 8000)
 debug_stops = []
 widget._request_lab.sig_stop_debug_server.connect(
