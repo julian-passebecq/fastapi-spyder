@@ -445,7 +445,6 @@ Next:
 - project/vendor child spans (SQL/HTTP/etc.) when those libraries already emit
   OpenTelemetry spans
 - optional native FastAPI metrics signal for active requests
-- exception -> source correlation
 - optional OTLP export remains compatible with external observability backends
 
 ## Non-goals
