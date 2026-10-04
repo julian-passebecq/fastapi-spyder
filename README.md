@@ -97,6 +97,8 @@ The repository now contains the v0.1 foundation:
 - Python source file + line mapping and double-click editor navigation
 - route-scoped lineage tree
 - native Qt Diagram tab with route-flow, global-architecture and impact views
+- static route-to-test discovery with a dedicated Tests explorer
+- optional test-function overlay on architecture diagrams
 - dependency and schema blast-radius views
 - serializable `FastAPIMap` JSON bridge
 - diagnostics view for import/inspection output
@@ -117,6 +119,32 @@ Inspect the example without Spyder:
 pip install -e ".[dev]"
 PYTHONPATH=examples/bookstore fastapi-spyder app:app
 ```
+
+## Route-to-test links
+
+FastAPI Studio can statically scan project test files and connect HTTP calls
+back to inspected routes without importing the test suite.
+
+The first implementation recognizes common TestClient/httpx-style calls inside
+functions named `test_*`:
+
+```python
+def test_get_user(client):
+    response = client.get("/users/42")
+
+async def test_create_user(async_client):
+    response = await async_client.post(url="/users")
+```
+
+Literal paths, full test-server URLs and simple f-string paths are matched
+against FastAPI route templates. The Tests pane shows route, test function,
+match confidence and source location. Double-click opens the test function.
+
+These links are intentionally classified as **static project evidence**, not
+FastAPI contract lineage. They can be overlaid on Route, Global and Impact
+diagrams with `route -> tested_by -> test function` edges.
+
+No test module is imported or executed during discovery.
 
 ## Interactive architecture diagrams
 
@@ -165,6 +193,7 @@ Implemented in the bootstrap branch:
 - dependency browser + blast radius
 - contract/dependency lineage
 - interactive architecture diagrams with pan/zoom and source navigation
+- route-to-test explorer and optional diagram test overlay
 - source navigation
 - normalized JSON view
 
