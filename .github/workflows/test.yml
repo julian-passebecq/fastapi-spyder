@@ -257,6 +257,20 @@ jobs:
           )
           assert "observed downstream node" in widget._diagram._summary.text()
 
+          database_node = next(
+              node
+              for node in runtime_nodes
+              if node.kind == "database"
+          )
+          widget._diagram._node_activated(database_node.id)
+          assert widget._tabs.currentWidget() is widget._telemetry
+          assert widget._telemetry._tabs.currentIndex() == 1
+          assert widget._telemetry._traces.currentItem() is not None
+          assert (
+              "Opened latest native telemetry for POST /v1/ingestions."
+              in widget._status.text()
+          )
+
           widget._diagram._show_downstream.setChecked(False)
           assert all(
               node.evidence != "runtime"
