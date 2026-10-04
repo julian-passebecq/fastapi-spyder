@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ipaddress
 from collections import deque
 from typing import Any
+from urllib.parse import urlsplit
 
 from spyder_fastapi.models import (
     FastAPIMap,
@@ -159,6 +161,51 @@ def _example_from_parameter(parameter: dict[str, Any]) -> Any:
         if isinstance(enum, list) and enum:
             return enum[0]
     return None
+
+
+def local_debug_server_address(base_url: str) -> tuple[str, int]:
+    """Resolve a loopback HTTP origin into a safe local uvicorn bind address."""
+
+    value = base_url.strip()
+    if not value:
+        raise ValueError("Base URL is required.")
+
+    parsed = urlsplit(value)
+    if parsed.scheme != "http":
+        raise ValueError(
+            "Spyder debug server currently supports local http:// URLs only."
+        )
+    if not parsed.hostname:
+        raise ValueError("Base URL must include a host.")
+    if parsed.username or parsed.password:
+        raise ValueError("Base URL must not contain credentials.")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Base URL must not contain a query or fragment.")
+    if parsed.path not in ("", "/"):
+        raise ValueError(
+            "Spyder debug server requires an origin URL without an API path."
+        )
+
+    host = parsed.hostname
+    is_loopback = host.casefold() == "localhost"
+    if not is_loopback:
+        try:
+            is_loopback = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            is_loopback = False
+
+    if not is_loopback:
+        raise ValueError(
+            "Spyder debug server only binds to loopback hosts "
+            "(localhost, 127.0.0.1 or ::1)."
+        )
+
+    try:
+        port = parsed.port or 80
+    except ValueError as exc:
+        raise ValueError("Base URL contains an invalid port.") from exc
+
+    return host, int(port)
 
 
 def build_request_template(api_map: FastAPIMap, route_id: str) -> RequestTemplate:
