@@ -62,12 +62,14 @@ class RequestLabWidget(QWidget):
 
     sig_status = Signal(str)
     sig_open_source = Signal(str, int)
+    sig_set_breakpoint = Signal(str, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._api_map: FastAPIMap | None = None
         self._template: RequestTemplate | None = None
         self._body_source: SourceRef | None = None
+        self._handler_source: SourceRef | None = None
         self._python_executable = sys.executable
         self._workdir = os.getcwd()
         self._process: QProcess | None = None
@@ -93,6 +95,11 @@ class RequestLabWidget(QWidget):
         self._base_url = QLineEdit("http://127.0.0.1:8000")
         self._base_url.setPlaceholderText("http://127.0.0.1:8000")
         route_row.addWidget(self._base_url, 1)
+
+        self._breakpoint = QPushButton("Set handler breakpoint")
+        self._breakpoint.setEnabled(False)
+        self._breakpoint.clicked.connect(self._set_handler_breakpoint)
+        route_row.addWidget(self._breakpoint)
 
         self._send = QPushButton("Send")
         self._send.setEnabled(False)
@@ -265,6 +272,8 @@ class RequestLabWidget(QWidget):
         )
         self._template = None
         self._body_source = None
+        self._handler_source = None
+        self._breakpoint.setEnabled(False)
 
         if self._api_map is None or not route_id:
             self._send.setEnabled(False)
@@ -282,6 +291,23 @@ class RequestLabWidget(QWidget):
 
         self._template = template
         self._body_source = template.body_source
+        route = next(
+            (
+                candidate
+                for candidate in self._api_map.routes
+                if candidate.id == route_id
+            ),
+            None,
+        )
+        self._handler_source = route.source if route is not None else None
+        self._breakpoint.setEnabled(
+            self._handler_source is not None
+            and bool(self._handler_source.file)
+            and bool(
+                self._handler_source.execution_line
+                or self._handler_source.line
+            )
+        )
         self._populate_parameter_table(template)
 
         has_body = template.body_example is not None or template.body_required
@@ -365,6 +391,17 @@ class RequestLabWidget(QWidget):
                 ensure_ascii=False,
             )
         )
+
+    def _set_handler_breakpoint(self) -> None:
+        source = self._handler_source
+        if source is None or not source.file:
+            return
+
+        line = source.execution_line or source.line
+        if line is None:
+            return
+
+        self.sig_set_breakpoint.emit(source.file, int(line))
 
     def _open_parameter_source(self, row: int, _column: int) -> None:
         item = self._parameters.item(row, 0)
