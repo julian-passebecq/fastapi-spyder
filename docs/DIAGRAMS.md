@@ -67,6 +67,29 @@ DELETE /orders/{id}/
 
 This is the visual counterpart to `impacted_routes()`.
 
+## Test evidence overlay
+
+Route-to-test links are not part of FastAPI runtime lineage. They come from a
+separate static scan of project tests and are therefore rendered as an optional
+evidence layer.
+
+When enabled:
+
+```text
+POST /orders ---- tested_by ----> test_create_order
+GET /orders  ---- tested_by ----> test_list_orders
+```
+
+A single test function is represented once even when it performs several calls
+to the same route. If one test function exercises multiple routes, those routes
+can share the same test node in the global diagram.
+
+The distinction remains explicit:
+
+- route/model/dependency edges = deterministic FastAPI structure;
+- tested_by edges = static project evidence;
+- future SQL/HTTP/storage timing edges = observed runtime evidence.
+
 ## Runtime evolution
 
 Future telemetry should enrich these same nodes instead of creating a separate
