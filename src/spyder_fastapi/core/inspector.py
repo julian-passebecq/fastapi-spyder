@@ -51,6 +51,21 @@ def _type_name(value: Any) -> str:
     return str(value).replace("typing.", "")
 
 
+def _field_type(field: Any) -> Any:
+    """Resolve a FastAPI/Pydantic field annotation across compatibility layers."""
+
+    direct = _field_type(field)
+    if direct is not None:
+        return direct
+
+    annotation = getattr(field, "annotation", None)
+    if annotation is not None:
+        return annotation
+
+    field_info = getattr(field, "field_info", None)
+    return getattr(field_info, "annotation", None)
+
+
 def _source_ref(call: Callable[..., Any] | Any) -> SourceRef:
     if call is None:
         return SourceRef()
@@ -128,7 +143,7 @@ def _dependant_parameters(dependant: Any) -> list[ParameterSpec]:
                 ParameterSpec(
                     name=field.name,
                     location=location,
-                    type_name=_type_name(getattr(field, "type_", None)),
+                    type_name=_type_name(_field_type(field)),
                     required=bool(getattr(field, "required", False)),
                 )
             )
@@ -145,7 +160,7 @@ def _walk_dependency(
 
     children: list[str] = []
     for field in getattr(dependant, "body_params", ()):
-        _register_model_type(getattr(field, "type_", None), model_sources)
+        _register_model_type(_field_type(field), model_sources)
 
     for child in getattr(dependant, "dependencies", ()):
         children.append(_walk_dependency(child, registry, model_sources))
@@ -169,7 +184,7 @@ def _route_parameters(route: APIRoute) -> list[ParameterSpec]:
 def _request_models(route: APIRoute) -> list[str]:
     names: list[str] = []
     for field in getattr(route.dependant, "body_params", ()):
-        type_name = _type_name(getattr(field, "type_", None))
+        type_name = _type_name(_field_type(field))
         if type_name not in names:
             names.append(type_name)
     return names
@@ -345,7 +360,7 @@ def inspect_app(app: FastAPI) -> FastAPIMap:
         ]
 
         for field in getattr(route.dependant, "body_params", ()):
-            _register_model_type(getattr(field, "type_", None), model_sources)
+            _register_model_type(_field_type(field), model_sources)
         _register_model_type(route.response_model, model_sources)
 
         methods = sorted(route.methods or {"GET"})
