@@ -72,6 +72,7 @@ class RequestLabWidget(QWidget):
     sig_open_source = Signal(str, int)
     sig_set_breakpoint = Signal(str, int)
     sig_start_debug_server = Signal(str, str, str, int)
+    sig_stop_debug_server = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -83,6 +84,7 @@ class RequestLabWidget(QWidget):
         self._workdir = os.getcwd()
         self._app_target: str | None = None
         self._debug_server_available = False
+        self._debug_server_running = False
         self._process: QProcess | None = None
         self._stdout_chunks: list[str] = []
         self._stderr_chunks: list[str] = []
@@ -136,6 +138,11 @@ class RequestLabWidget(QWidget):
         self._cancel_debug_wait.setEnabled(False)
         self._cancel_debug_wait.clicked.connect(self._cancel_debug_replay)
         route_row.addWidget(self._cancel_debug_wait)
+
+        self._stop_debug_server = QPushButton("Stop debug server")
+        self._stop_debug_server.setEnabled(False)
+        self._stop_debug_server.clicked.connect(self.sig_stop_debug_server.emit)
+        route_row.addWidget(self._stop_debug_server)
 
         self._send = QPushButton("Send")
         self._send.setEnabled(False)
@@ -343,6 +350,12 @@ class RequestLabWidget(QWidget):
     def set_debug_server_available(self, available: bool) -> None:
         self._debug_server_available = bool(available)
         self._update_debug_server_enabled()
+
+    def set_debug_server_running(self, running: bool) -> None:
+        self._debug_server_running = bool(running)
+        self._stop_debug_server.setEnabled(self._debug_server_running)
+        if not running:
+            self._cancel_debug_replay(silent=True)
 
     def _update_debug_server_enabled(self) -> None:
         self._debug_server.setEnabled(
